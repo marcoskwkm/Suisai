@@ -1,0 +1,133 @@
+:root {
+  --font-ui: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --code-size: 12px;
+
+  --bg: #ffffff;
+  --bg-subtle: #f6f8fa;
+  --bg-inset: #eff2f5;
+  --bg-hover: #eaeef2;
+  --bg-selected: #ddf4ff;
+  --border: #d1d9e0;
+  --border-muted: #e3e8ec;
+  --fg: #1f2328;
+  --fg-muted: #59636e;
+  --fg-subtle: #818b98;
+  /* Default text color of the github-light / github-dark syntax themes. */
+  --code-fg: #24292e;
+  --accent: #0969da;
+  --accent-fg: #ffffff;
+
+  --add-line: #e6ffec;
+  --add-num: #ccffd8;
+  --add-word: #abf2bc;
+  --del-line: #ffebe9;
+  --del-num: #ffd7d5;
+  --del-word: rgba(255, 129, 130, 0.4);
+  --hunk-bg: #ddf4ff;
+  --hunk-num: #b6e3ff;
+  --hunk-fg: #59636e;
+  --empty-cell: #f6f8fa;
+
+  --status-added: #1a7f37;
+  --status-deleted: #d1242f;
+  --status-modified: #9a6700;
+  --status-renamed: #0969da;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1117;
+  --bg-subtle: #151b23;
+  --bg-inset: #010409;
+  --bg-hover: #1f2630;
+  --bg-selected: #1a2a40;
+  --border: #3d444d;
+  --border-muted: #2a313a;
+  --fg: #f0f6fc;
+  --fg-muted: #9198a1;
+  --fg-subtle: #656c76;
+  --code-fg: #e1e4e8;
+  --accent: #4493f8;
+  --accent-fg: #ffffff;
+
+  --add-line: rgba(46, 160, 67, 0.15);
+  --add-num: rgba(63, 185, 80, 0.3);
+  --add-word: rgba(46, 160, 67, 0.4);
+  --del-line: rgba(248, 81, 73, 0.1);
+  --del-num: rgba(248, 81, 73, 0.3);
+  --del-word: rgba(248, 81, 73, 0.4);
+  --hunk-bg: rgba(56, 139, 253, 0.1);
+  --hunk-num: rgba(56, 139, 253, 0.25);
+  --hunk-fg: #9198a1;
+  --empty-cell: #151b23;
+
+  --status-added: #3fb950;
+  --status-deleted: #f85149;
+  --status-modified: #d29922;
+  --status-renamed: #4493f8;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input {
+  font: inherit;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+}
+
+/* Thin, always-visible scrollbars. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg-subtle) 45%, transparent);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--fg-subtle) 70%, transparent);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
