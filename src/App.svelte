@@ -8,7 +8,7 @@
   import { preloadLanguages } from "./lib/highlight/client";
   import { cycleTheme, theme } from "./lib/theme.svelte";
   import { detectLanguage } from "./lib/highlight/languages";
-  import { getDiff, getSession } from "./lib/git/api";
+  import { editorTarget, getDiff, getSession, openInEditor } from "./lib/git/api";
   import { applyIgnoreWhitespace, parsePatch, relativizePaths } from "./lib/git/parse";
   import { buildTree, fileOrder } from "./lib/tree";
   import type { FileDiff, SessionInfo, ViewMode } from "./lib/types";
@@ -58,6 +58,38 @@
   const ordered = $derived(fileOrder(buildTree(visibleFiles)));
   const selected = $derived(files.find((f) => f.id === selectedId) ?? null);
   const selectedIndex = $derived(ordered.findIndex((f) => f.id === selectedId));
+
+  // ---- opening the selected file in an editor ----
+  /** Where the selected file is on disk, if it can be opened. */
+  let editorPath = $state<{ id: string; path: string } | null>(null);
+  $effect(() => {
+    const f = selected;
+    editorPath = null;
+    if (!f?.newPath) return;
+    let cancelled = false;
+    editorTarget(f.newPath).then(
+      (p) => {
+        if (!cancelled && p) editorPath = { id: f.id, path: p };
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  });
+  const canOpen = $derived(selected !== null && editorPath?.id === selected.id);
+
+  /** The first changed line in the new file, to place the cursor there. */
+  function firstChangedLine(f: FileDiff): number {
+    for (const h of f.hunks) for (const l of h.lines) if (l.type === "add") return l.newNo!;
+    return f.hunks[0]?.newStart ?? 1;
+  }
+
+  function openSelected() {
+    const f = selected;
+    if (!f?.newPath || !canOpen) return;
+    openInEditor(f.newPath, firstChangedLine(f)).catch((e) => console.error(e));
+  }
 
   async function load() {
     loading = true;
@@ -160,6 +192,7 @@
       w: toggleWhitespace,
       b: () => (sidebarVisible = !sidebarVisible),
       t: cycleTheme,
+      o: openSelected,
       r: reload,
       "/": () => {
         sidebarVisible = true;
@@ -244,13 +277,20 @@
       <div class="file-info">
         {#if selected}
           <span class="badge {selected.status}">{STATUS_LABEL[selected.status]}</span>
-          <span class="path" title={selected.path}>
-            {#if (selected.status === "renamed" || selected.status === "copied") && selected.oldPath !== selected.newPath}
-              <span class="old-path">{selected.oldPath}</span> → {selected.newPath}
+          {#snippet pathText(f: FileDiff)}
+            {#if (f.status === "renamed" || f.status === "copied") && f.oldPath !== f.newPath}
+              <span class="old-path">{f.oldPath}</span> → {f.newPath}
             {:else}
-              {selected.path}
+              {f.path}
             {/if}
-          </span>
+          {/snippet}
+          {#if canOpen}
+            <a class="path" href={"#"} title="Open {editorPath?.path} in editor (o)" onclick={(e) => (e.preventDefault(), openSelected())}>
+              {@render pathText(selected)}
+            </a>
+          {:else}
+            <span class="path" title={selected.path}>{@render pathText(selected)}</span>
+          {/if}
           {#if !selected.binary}
             <span class="stat add">+{selected.additions}</span>
             <span class="stat del">−{selected.deletions}</span>
@@ -417,6 +457,15 @@
     min-width: 0;
     user-select: text;
     -webkit-user-select: text;
+  }
+  a.path {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  a.path:hover {
+    color: var(--accent);
+    text-decoration: underline;
   }
   .old-path {
     color: var(--fg-muted);

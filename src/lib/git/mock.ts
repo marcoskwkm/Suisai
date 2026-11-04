@@ -27,6 +27,8 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown>): Pr
       const key = [args.side as Side, args.path, args.blob ?? "", Boolean(args.base64)].join("\u0000");
       return m.files[key] ?? { kind: "missing" };
     }
+    case "editor_target":
+      return null;
   }
   throw new Error(`unknown command ${cmd}`);
 }

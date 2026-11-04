@@ -15,3 +15,8 @@ export const getDiff = (ignoreWhitespace: boolean) => invoke<DiffOutput>("get_di
 
 export const readFile = (side: Side, path: string, blob: string | null, base64 = false) =>
   invoke<FileContent>("read_file", { side, path, blob, base64 });
+
+/** Absolute path of the file on disk to open in an editor, or null if there is none. */
+export const editorTarget = (path: string) => invoke<string | null>("editor_target", { path });
+
+export const openInEditor = (path: string, line: number) => invoke<void>("open_in_editor", { path, line });

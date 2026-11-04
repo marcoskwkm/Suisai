@@ -25,6 +25,9 @@ pub enum Source {
         right: PathBuf,
         /// Name to show when comparing two single files.
         file_name: Option<String>,
+        /// The right-hand path as given (before copying), used to find the
+        /// real file to open in an editor.
+        right_original: PathBuf,
     },
 }
 
@@ -143,7 +146,7 @@ impl Source {
     pub fn read(&self, side: Side, path: &str, blob: Option<&str>, want_base64: bool) -> FileContent {
         let bytes = match self {
             Source::Repo { root, .. } => read_repo_file(root, path, blob),
-            Source::Paths { left, right, file_name } => {
+            Source::Paths { left, right, file_name, .. } => {
                 let root = if side == Side::Old { left } else { right };
                 if file_name.is_some() {
                     read_limited(root)
@@ -161,6 +164,73 @@ impl Source {
             _ => FileContent::Missing,
         }
     }
+}
+
+impl Source {
+    /// The file on disk to open in an editor for a path in the diff, if any.
+    /// Files inside git's difftool temp dirs are skipped: they are copies that
+    /// git deletes when the tool exits.
+    pub fn editor_target(&self, path: &str) -> Option<PathBuf> {
+        let p = match self {
+            Source::Repo { root, .. } => safe_join(root, path)?,
+            Source::Paths { right_original, file_name, .. } => {
+                if file_name.is_some() {
+                    right_original.clone()
+                } else {
+                    safe_join(right_original, path)?
+                }
+            }
+        };
+        // Follows difftool's symlinks into the working tree.
+        let p = p.canonicalize().ok()?;
+        let in_temp = p.components().any(|c| c.as_os_str().to_string_lossy().starts_with("git-difftool."));
+        (p.is_file() && !in_temp).then_some(p)
+    }
+
+    fn git_cwd(&self) -> &Path {
+        match self {
+            Source::Repo { root, .. } => root,
+            Source::Paths { right_original, .. } => right_original.parent().unwrap_or(Path::new("/")),
+        }
+    }
+
+    /// Opens a file in the editor. The URL template comes from
+    /// `git config suisai.editorUrl` (default: VS Code), with `{path}` and
+    /// `{line}` replaced.
+    pub fn open_in_editor(&self, path: &str, line: u32) -> Result<(), String> {
+        let target = self.editor_target(path).ok_or("this file is not on disk")?;
+        let template = Command::new("git")
+            .args(["config", "--get", "suisai.editorUrl"])
+            .current_dir(self.git_cwd())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| DEFAULT_EDITOR_URL.to_string());
+        let url = editor_url(&template, &target, line.max(1));
+        let status = Command::new("open").arg(&url).status().map_err(|e| format!("could not run open: {e}"))?;
+        if status.success() { Ok(()) } else { Err(format!("could not open {url}")) }
+    }
+}
+
+const DEFAULT_EDITOR_URL: &str = "vscode://file{path}:{line}";
+
+fn editor_url(template: &str, path: &Path, line: u32) -> String {
+    template.replace("{path}", &encode_path(&path.to_string_lossy())).replace("{line}", &line.to_string())
+}
+
+/// Percent-encodes a path for a URL, keeping `/`.
+fn encode_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for b in path.bytes() {
+        if b.is_ascii_alphanumeric() || b"/-._~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 enum Loaded {
@@ -291,6 +361,15 @@ mod tests {
         assert_eq!(safe_join(root, "a/b.txt"), Some(PathBuf::from("/r/a/b.txt")));
         assert_eq!(safe_join(root, "../x"), None);
         assert_eq!(safe_join(root, "/etc/passwd"), None);
+    }
+
+    #[test]
+    fn builds_editor_urls() {
+        assert_eq!(
+            editor_url(DEFAULT_EDITOR_URL, Path::new("/a/my file#1.ts"), 12),
+            "vscode://file/a/my%20file%231.ts:12"
+        );
+        assert_eq!(editor_url("zed://file{path}", Path::new("/ü"), 1), "zed://file/%C3%BC");
     }
 
     #[test]

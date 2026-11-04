@@ -8,6 +8,7 @@
         [["Tab", "]"], "Next file"],
         [["⇧ Tab", "["], "Previous file"],
         [["/"], "Filter files"],
+        [["o"], "Open file in editor"],
         [["b"], "Toggle sidebar"],
       ],
     ],

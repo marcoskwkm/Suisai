@@ -38,6 +38,21 @@ async fn read_file(
     }
 }
 
+/// Absolute path of the file to open in an editor, or null if there is none.
+#[tauri::command]
+fn editor_target(state: tauri::State<'_, AppState>, path: String) -> Option<String> {
+    let target = state.source.as_ref()?.editor_target(&path)?;
+    Some(target.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+async fn open_in_editor(state: tauri::State<'_, AppState>, path: String, line: u32) -> Result<(), String> {
+    match &state.source {
+        Some(source) => source.open_in_editor(&path, line),
+        None => Err("nothing to open".into()),
+    }
+}
+
 fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string())
 }
@@ -94,6 +109,7 @@ fn build_session(inv: cli::Invocation, temp_dir: &Path) -> (SessionInfo, Option<
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|_| file_name(&right))
             });
+            let right_original = right.clone();
             let resolved = source::resolve_symlinks(&left, temp_dir, "left")
                 .and_then(|l| source::resolve_symlinks(&right, temp_dir, "right").map(|r| (l, r)));
             match resolved {
@@ -101,7 +117,7 @@ fn build_session(inv: cli::Invocation, temp_dir: &Path) -> (SessionInfo, Option<
                     info.left_root = Some(left.to_string_lossy().into_owned());
                     info.right_root = Some(right.to_string_lossy().into_owned());
                     info.file_name = display_name.clone();
-                    (info, Some(Source::Paths { left, right, file_name: display_name }))
+                    (info, Some(Source::Paths { left, right, file_name: display_name, right_original }))
                 }
                 Err(e) => {
                     info.error = Some(format!("could not read files: {e}"));
@@ -141,7 +157,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(AppState { info, source, temp_dir })
-        .invoke_handler(tauri::generate_handler![get_session, get_diff, read_file])
+        .invoke_handler(tauri::generate_handler![get_session, get_diff, read_file, editor_target, open_in_editor])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_title(&title);

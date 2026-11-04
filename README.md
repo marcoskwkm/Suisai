@@ -50,6 +50,17 @@ Without `-d`, git opens one window per file, one after another.
 
 The command waits until the window is closed (git needs this, because it deletes its temporary files when the tool exits). Press <kbd>q</kbd> to close.
 
+## Opening files in your editor
+
+Click the file path above the diff (or press <kbd>o</kbd>) to open the file in VS Code, at the first changed line. This works when the file exists on disk: in the working tree for `ss`, or the right-hand path for `ss left right`. Files that only exist in git's temporary difftool copies cannot be opened.
+
+To use another editor, set a URL with `{path}` and `{line}` placeholders:
+
+```sh
+git config --global suisai.editorUrl 'cursor://file{path}:{line}'   # Cursor
+git config --global suisai.editorUrl 'zed://file{path}:{line}'      # Zed
+```
+
 ## Keyboard shortcuts
 
 | Key | Action |
@@ -65,6 +76,7 @@ The command waits until the window is closed (git needs this, because it deletes
 | <kbd>b</kbd> | Toggle sidebar |
 | <kbd>t</kbd> | Cycle theme (system / light / dark) |
 | <kbd>/</kbd> | Filter files |
+| <kbd>o</kbd> | Open file in editor |
 | <kbd>r</kbd> | Reload |
 | <kbd>q</kbd> | Close window |
 
