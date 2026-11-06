@@ -52,7 +52,7 @@ The command waits until the window is closed (git needs this, because it deletes
 
 ## Opening files in your editor
 
-Click the file path above the diff (or press <kbd>o</kbd>) to open the file in VS Code, at the first changed line. This works when the file exists on disk: in the working tree for `ss`, or the right-hand path for `ss left right`. Files that only exist in git's temporary difftool copies cannot be opened.
+Click the file path above the diff (or press <kbd>o</kbd>) to open the file in VS Code, at the first changed line. Click a line number of the new file to open it at that line. This works when the file exists on disk: in the working tree for `ss`, or the right-hand path for `ss left right`. Files that only exist in git's temporary difftool copies cannot be opened.
 
 To use another editor, set a URL with `{path}` and `{line}` placeholders:
 

@@ -22,9 +22,11 @@
     maxChars: { old: number; new: number };
     numberDigits: number;
     onexpand: (gap: number, direction: "up" | "down" | "all") => void;
+    /** Opens the new file in an editor at a line. Without it, line numbers are not links. */
+    onopenline?: (no: number) => void;
   }
 
-  let { rows, view, resetKey, text, tokens, intraline, maxChars, numberDigits, onexpand }: Props = $props();
+  let { rows, view, resetKey, text, tokens, intraline, maxChars, numberDigits, onexpand, onopenline }: Props = $props();
 
   let scroller: HTMLDivElement;
   let scrollTop = $state(0);
@@ -285,8 +287,15 @@
   {/if}
 {/snippet}
 
-{#snippet num(cell: Cell | null, cls = "")}
-  <div class="num {cell?.type ?? 'empty'} {cls}">{cell?.no ?? ""}</div>
+{#snippet num(cell: Cell | null, cls = "", side: Side = "old")}
+  {#if cell && side === "new" && onopenline}
+    {@const no = cell.no}
+    <a class="num {cell.type} {cls}" href={"#"} title="Open line {no} in editor" onclick={(e) => (e.preventDefault(), onopenline(no))}
+      >{no}</a
+    >
+  {:else}
+    <div class="num {cell?.type ?? 'empty'} {cls}">{cell?.no ?? ""}</div>
+  {/if}
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -321,7 +330,7 @@
           <div class="row line" style:transform="translateY({top}px)">
             {@render num(row.left)}
             {@render code("old", row.left)}
-            {@render num(row.right, "right")}
+            {@render num(row.right, "right", "new")}
             {@render code("new", row.right)}
           </div>
         {:else}
@@ -329,7 +338,7 @@
           {@const side = row.type === "del" ? "old" : "new"}
           <div class="row line" style:transform="translateY({top}px)">
             {@render num(row.oldNo === null ? null : { type: row.type, no: row.oldNo })}
-            {@render num(row.newNo === null ? null : { type: row.type, no: row.newNo })}
+            {@render num(row.newNo === null ? null : { type: row.type, no: row.newNo }, "", "new")}
             {@render code(side, cell)}
           </div>
         {/if}
@@ -425,6 +434,14 @@
   }
   .num.empty {
     background: var(--empty-cell);
+  }
+  a.num {
+    text-decoration: none;
+    cursor: pointer;
+  }
+  a.num:hover {
+    color: var(--accent);
+    text-decoration: underline;
   }
   .split .num.right {
     border-left: 1px solid var(--border-muted);

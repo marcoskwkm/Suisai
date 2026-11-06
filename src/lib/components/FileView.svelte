@@ -8,9 +8,11 @@
   interface Props {
     file: FileDiff;
     view: ViewMode;
+    /** Opens the new file in an editor at a line, when it is on disk. */
+    onopenline?: (no: number) => void;
   }
 
-  let { file, view }: Props = $props();
+  let { file, view, onopenline }: Props = $props();
 
   let diffView: DiffView | undefined = $state();
   /**
@@ -201,6 +203,7 @@
         {maxChars}
         {numberDigits}
         {onexpand}
+        {onopenline}
       />
     {/if}
   </div>

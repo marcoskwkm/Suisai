@@ -85,10 +85,10 @@
     return f.hunks[0]?.newStart ?? 1;
   }
 
-  function openSelected() {
+  function openSelected(line?: number) {
     const f = selected;
     if (!f?.newPath || !canOpen) return;
-    openInEditor(f.newPath, firstChangedLine(f)).catch((e) => console.error(e));
+    openInEditor(f.newPath, line ?? firstChangedLine(f)).catch((e) => console.error(e));
   }
 
   async function load() {
@@ -349,7 +349,7 @@
           <p><code>{session?.subtitle}</code> has nothing to show.</p>
         </div>
       {:else if selected}
-        <FileView bind:this={fileView} file={selected} {view} />
+        <FileView bind:this={fileView} file={selected} {view} onopenline={canOpen ? openSelected : undefined} />
       {/if}
     </div>
   </main>
