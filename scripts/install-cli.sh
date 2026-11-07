@@ -1,6 +1,7 @@
 #!/bin/sh
 # Installs a command (`ss` by default) that launches Suisai, so it can be used
-# from the terminal and as git's difftool.
+# from the terminal and as git's difftool, plus `ss-dev`, which runs this
+# checkout from source in dev mode (see scripts/dev.sh).
 #
 #   scripts/install-cli.sh [path/to/Suisai.app]
 #
@@ -36,6 +37,14 @@ SCRIPT
 chmod +x "$bin_dir/$name"
 
 echo "Installed $bin_dir/$name -> $app"
+
+# A dev version that runs this checkout from source with live reloading.
+cat > "$bin_dir/$name-dev" <<SCRIPT
+#!/bin/sh
+exec "$repo_dir/scripts/dev.sh" "\$@"
+SCRIPT
+chmod +x "$bin_dir/$name-dev"
+echo "Installed $bin_dir/$name-dev -> $repo_dir (dev mode, from source)"
 case ":$PATH:" in
   *":$bin_dir:"*) ;;
   *) echo "note: $bin_dir is not on your PATH" ;;

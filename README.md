@@ -112,13 +112,15 @@ The command is called `ss` by default. To use another name (for example if you a
 ## Development
 
 ```sh
-pnpm tauri dev          # run the app with hot reload (it shows the diff of this repo)
+ss-dev                  # like `ss`, but runs this checkout from source with live reloading
 pnpm test               # frontend unit tests (vitest)
 pnpm check              # type-check
 cd src-tauri && cargo test
 ```
 
-Pass arguments to the app in dev mode after `--`, e.g. `pnpm tauri dev -- -- -C ~/code/project HEAD~1`.
+`ss-dev` (installed by `scripts/install-cli.sh`, or run `scripts/dev.sh` directly) takes the same arguments as `ss` and works from any directory, e.g. `ss-dev --staged` or `ss-dev HEAD~1`. Changes to the code show up in the open window: the UI updates in place, and the app is rebuilt and restarted when Rust code changes. Only one dev window can run at a time. It stores its settings separately from the built app, so connect the AI agent again the first time.
+
+`ss` keeps running the built app until you rebuild it with `pnpm tauri build --bundles app`.
 
 ### Working on the UI in a browser
 
