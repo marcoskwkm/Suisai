@@ -1,9 +1,9 @@
 //! Command-line parsing.
 //!
 //! Usage:
-//!   ss [-C <dir>] [<git diff args>...]   compare using `git diff` in the current repo
-//!   ss [-C <dir>] <left> <right>         compare two existing files or directories
-//!                                             (this is what `git difftool` calls)
+//!   ss [-C <dir>] [-g] [<git diff args>...]   compare using `git diff` in the current repo
+//!   ss [-C <dir>] [-g] <left> <right>         compare two existing files or directories
+//!                                                  (this is what `git difftool` calls)
 
 use std::path::{Path, PathBuf};
 
@@ -11,17 +11,19 @@ pub const USAGE: &str = "\
 Suisai: a GitHub-style diff viewer for git.
 
 Usage:
-  ss [-C <dir>] [<git diff args>...]
+  ss [-C <dir>] [-g] [<git diff args>...]
       Show `git diff <args>` for the repository in the current directory.
       Examples: ss | ss --staged | ss HEAD~3 | ss main...feature -- src/
 
-  ss [-C <dir>] <left> <right>
+  ss [-C <dir>] [-g] <left> <right>
       Compare two files or directories (used by `git difftool`).
       If both arguments exist on disk they are treated as paths; use
       `ss -- <path> <path>` to pass them to git diff as pathspecs instead.
 
 Options:
   -C <dir>        Run as if started in <dir>
+  -g, --guide     Open the AI review guide, and write it if there is none
+                  for this diff yet (asks to connect an agent if needed)
   -h, --help      Show this help
   -V, --version   Show version
 
@@ -44,21 +46,34 @@ pub enum Command {
 pub struct Invocation {
     pub cwd: PathBuf,
     pub command: Command,
+    /// `--guide`: open the review guide and generate it if needed.
+    pub guide: bool,
 }
 
 pub fn parse(raw: impl IntoIterator<Item = String>, cwd: &Path) -> Result<Invocation, String> {
     // Old macOS versions pass a `-psn_*` process serial number when launched from Finder.
     let mut args: Vec<String> = raw.into_iter().filter(|a| !a.starts_with("-psn_")).collect();
     let mut cwd = cwd.to_path_buf();
+    let mut guide = false;
 
-    // Leading `-C <dir>` options, like git.
-    while args.first().map(String::as_str) == Some("-C") {
-        if args.len() < 2 {
-            return Err("option -C requires a directory".into());
+    // Suisai's own options come first (like git's `-C <dir>`); the rest is
+    // for `git diff`, or the two paths to compare.
+    loop {
+        match args.first().map(String::as_str) {
+            Some("-C") => {
+                if args.len() < 2 {
+                    return Err("option -C requires a directory".into());
+                }
+                let dir = args.remove(1);
+                args.remove(0);
+                cwd = cwd.join(dir);
+            }
+            Some("--guide" | "-g") => {
+                args.remove(0);
+                guide = true;
+            }
+            _ => break,
         }
-        let dir = args.remove(1);
-        args.remove(0);
-        cwd = cwd.join(dir);
     }
     if !cwd.is_dir() {
         return Err(format!("not a directory: {}", cwd.display()));
@@ -66,8 +81,8 @@ pub fn parse(raw: impl IntoIterator<Item = String>, cwd: &Path) -> Result<Invoca
 
     if args.len() == 1 {
         match args[0].as_str() {
-            "-h" | "--help" => return Ok(Invocation { cwd, command: Command::Help }),
-            "-V" | "--version" => return Ok(Invocation { cwd, command: Command::Version }),
+            "-h" | "--help" => return Ok(Invocation { cwd, command: Command::Help, guide }),
+            "-V" | "--version" => return Ok(Invocation { cwd, command: Command::Version, guide }),
             _ => {}
         }
     }
@@ -79,11 +94,11 @@ pub fn parse(raw: impl IntoIterator<Item = String>, cwd: &Path) -> Result<Invoca
             if left.is_dir() != right.is_dir() {
                 return Err("cannot compare a file with a directory".into());
             }
-            return Ok(Invocation { cwd, command: Command::Paths { left, right } });
+            return Ok(Invocation { cwd, command: Command::Paths { left, right }, guide });
         }
     }
 
-    Ok(Invocation { cwd, command: Command::Repo { args } })
+    Ok(Invocation { cwd, command: Command::Repo { args }, guide })
 }
 
 #[cfg(test)]
@@ -163,6 +178,28 @@ mod tests {
         let inv = parse(s(&["-C", d.to_str().unwrap(), "--staged"]), Path::new("/")).unwrap();
         assert_eq!(inv.cwd, d.to_path_buf());
         assert_eq!(inv.command, Command::Repo { args: s(&["--staged"]) });
+    }
+
+    #[test]
+    fn guide_flag() {
+        let d = tmp();
+        let inv = parse(s(&["--guide", "--staged"]), &d).unwrap();
+        assert!(inv.guide);
+        assert_eq!(inv.command, Command::Repo { args: s(&["--staged"]) });
+        // Mixed with -C, in any order; still paths mode for two paths.
+        let inv = parse(s(&["-C", d.to_str().unwrap(), "--guide", "a", "b"]), Path::new("/")).unwrap();
+        assert!(inv.guide);
+        assert!(matches!(inv.command, Command::Paths { .. }));
+        let inv = parse(s(&["--guide", "-C", d.to_str().unwrap()]), Path::new("/")).unwrap();
+        assert!(inv.guide);
+        // Only leading options count: after `--` it is a pathspec.
+        let inv = parse(s(&["--", "--guide"]), &d).unwrap();
+        assert!(!inv.guide);
+        assert_eq!(inv.command, Command::Repo { args: s(&["--", "--guide"]) });
+        assert!(!parse(s(&["HEAD"]), &d).unwrap().guide);
+        let inv = parse(s(&["-g", "HEAD~1"]), &d).unwrap();
+        assert!(inv.guide);
+        assert_eq!(inv.command, Command::Repo { args: s(&["HEAD~1"]) });
     }
 
     #[test]

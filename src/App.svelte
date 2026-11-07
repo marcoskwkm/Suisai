@@ -82,6 +82,11 @@
     if (step >= n) step = Math.max(0, n - 1);
   });
 
+  // `--guide` without a connected agent: ask for one; generating starts once it is connected.
+  $effect(() => {
+    if (gs.needsAgent) showSettings = true;
+  });
+
   function selectStep(i: number) {
     const n = guide?.groups.length ?? 0;
     if (n) step = Math.min(n - 1, Math.max(0, i));
@@ -146,7 +151,15 @@
   async function load() {
     loading = true;
     try {
-      session ??= await getSession();
+      if (!session) {
+        session = await getSession();
+        // `ss --guide`: open the guide, and write it if there is none yet.
+        if (session.startGuide && !session.error) {
+          mode = "guide";
+          sidebarVisible = true;
+          gs.requestGuide();
+        }
+      }
       if (session.error) {
         error = session.error;
         return;

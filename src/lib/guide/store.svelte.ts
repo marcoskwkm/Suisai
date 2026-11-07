@@ -62,6 +62,8 @@ class GuideStore {
   stale = $state(false);
   /** A saved guide was dropped because none of its changes are in the diff any more. */
   discarded = $state(false);
+  /** `--guide` is waiting for an agent to be connected before it can generate. */
+  needsAgent = $state(false);
 
   /** The connected agent, if its CLI is installed. */
   connected = $derived.by((): AgentKind | null => {
@@ -74,6 +76,10 @@ class GuideStore {
   #run = 0;
   /** The job that failed, to retry it. */
   #failed: AgentJob | null = null;
+  /** Started with `--guide`: generate once the diff is loaded, unless a guide is already there. */
+  #wantGuide = false;
+  /** The diff's items have been set at least once. */
+  #loaded = false;
   /** The keys of `items`, to tell a reload with the same diff from a changed one. */
   #itemKeys = "";
 
@@ -108,6 +114,31 @@ class GuideStore {
     );
     // An out-of-date guide can be updated now.
     if (agent && this.stale) this.sync();
+    this.#autoGenerate();
+  }
+
+  /** For `--guide`: generates the guide as soon as possible, if there is none for this diff. */
+  requestGuide() {
+    this.#wantGuide = true;
+    this.#autoGenerate();
+  }
+
+  #autoGenerate() {
+    // Wait for the first diff.
+    if (!this.#wantGuide || !this.#loaded) return;
+    // A saved guide that still matches is shown (and updated) instead.
+    if (this.guide || this.busy) {
+      this.#wantGuide = false;
+      this.needsAgent = false;
+      return;
+    }
+    if (!this.connected) {
+      this.needsAgent = this.agents !== null;
+      return;
+    }
+    this.#wantGuide = false;
+    this.needsAgent = false;
+    this.generate();
   }
 
   /** Called with the diff's items after every (re)load: keeps the guide in sync. */
@@ -117,9 +148,12 @@ class GuideStore {
     const same = keys === this.#itemKeys;
     this.items = items;
     this.#itemKeys = keys;
+    this.#loaded = true;
     // Same diff (e.g. toggling whitespace) while the agent works: let it finish.
     if (same && this.busy) return;
     this.sync();
+    if (items.length === 0) this.#wantGuide = false;
+    this.#autoGenerate();
   }
 
   sync() {

@@ -42,6 +42,8 @@ pub struct SessionInfo {
     pub right_root: Option<String>,
     pub file_name: Option<String>,
     pub error: Option<String>,
+    /// Started with `--guide`: open the review guide and generate it if needed.
+    pub start_guide: bool,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq)]

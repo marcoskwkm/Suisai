@@ -20,7 +20,8 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown>): Pr
   const m = await load();
   switch (cmd) {
     case "get_session":
-      return m.session;
+      // `?guide` in the URL acts like `ss --guide`.
+      return { ...m.session, startGuide: new URLSearchParams(location.search).has("guide") };
     case "get_diff":
       return { patch: m.patch, ignoreWhitespacePatch: args.ignoreWhitespace ? m.wsPatch : null } satisfies DiffOutput;
     case "read_file": {

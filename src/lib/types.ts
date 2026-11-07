@@ -65,6 +65,8 @@ export interface SessionInfo {
   rightRoot: string | null;
   fileName: string | null;
   error: string | null;
+  /** Started with `--guide`: open the review guide and generate it if needed. */
+  startGuide: boolean;
 }
 
 export interface DiffOutput {

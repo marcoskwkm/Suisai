@@ -27,6 +27,7 @@ ss HEAD~3                   # any `git diff` arguments work
 ss main...feature -- src/
 ss left/ right/             # compare two directories or files
 ss -C ~/code/project        # run as if started in another directory
+ss -g HEAD~3                # open the AI review guide right away (-g is --guide; see below)
 ```
 
 If both arguments exist on disk, they are compared as paths. Use `ss -- a b` to pass them to `git diff` as pathspecs instead.
@@ -68,7 +69,7 @@ Suisai can ask an AI agent to write a review guide for the diff: the changes gro
 
 1. Install [Claude Code](https://claude.com/claude-code) or [Codex](https://github.com/openai/codex) (sign in to Codex with your ChatGPT account using `codex login`).
 2. Open the **Guide** tab in the sidebar (or press <kbd>a</kbd>), click **Connect an AI agent** and pick one.
-3. Click **Generate guide**.
+3. Click **Generate guide**, or start Suisai with `-g` / `--guide` (e.g. `ss -g`, `ss -g main...HEAD`) to open the guide and start writing it right away.
 
 The agent runs on your computer, in the repository, with read-only tools. Guides are saved in `~/Library/Caches/com.marcoskwkm.suisai`, one per repository and set of `git diff` arguments. When the diff changes (press <kbd>r</kbd>, or open `ss` again), the guide updates itself: changes that are still there keep their place, removed ones disappear right away, and the agent only gets the new or rewritten changes to place, plus a list of what each step lost so it can update those explanations. If most of the diff is new, the guide is written again from scratch.
 

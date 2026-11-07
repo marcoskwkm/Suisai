@@ -147,6 +147,7 @@ fn build_session(inv: cli::Invocation, temp_dir: &Path) -> (SessionInfo, Option<
         right_root: None,
         file_name: None,
         error: None,
+        start_guide: inv.guide,
     };
     match inv.command {
         cli::Command::Repo { args } => match source::git_root(&inv.cwd) {
