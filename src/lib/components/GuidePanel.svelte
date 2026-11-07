@@ -54,6 +54,24 @@
     return new Date(t).toLocaleDateString();
   }
 
+  // Long overviews are cut to a few lines, with a toggle to read the rest.
+  let overviewEl: HTMLDivElement | undefined = $state();
+  let overviewOpen = $state(false);
+  let overviewLong = $state(false);
+  $effect(() => {
+    const el = overviewEl;
+    void guide?.overview;
+    if (!el) return;
+    const measure = () => {
+      // Measured while collapsed: does the text go past the cut?
+      if (!overviewOpen) overviewLong = el.scrollHeight > el.clientHeight + 1;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
   /** Writes the guide again, or asks to connect an agent first. */
   function regenerate() {
     if (gs.connected) gs.generate();
@@ -120,7 +138,14 @@
         </button>
       </div>
       <!-- Escaped by renderMarkdown. -->
-      {#if guide.overview}<div class="overview">{@html renderMarkdown(guide.overview)}</div>{/if}
+      {#if guide.overview}
+        <div class="overview" class:expanded={overviewOpen} bind:this={overviewEl}>{@html renderMarkdown(guide.overview)}</div>
+        {#if overviewLong}
+          <button class="link more-toggle" onclick={() => (overviewOpen = !overviewOpen)}>
+            {overviewOpen ? "Show less" : "Show more"}
+          </button>
+        {/if}
+      {/if}
     </div>
 
     <div class="list" bind:this={list}>
@@ -303,7 +328,7 @@
   }
 
   .summary {
-    padding: 4px 12px 10px;
+    padding: 4px 12px 12px;
     border-bottom: 1px solid var(--border-muted);
   }
   .summary-head {
@@ -347,18 +372,40 @@
     background: var(--bg-inset);
   }
   .overview {
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--fg-muted);
-    max-height: 120px;
-    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.55;
+    color: color-mix(in srgb, var(--fg) 85%, var(--bg-subtle));
+    /* About six lines; "Show more" reveals the rest. */
+    max-height: calc(13px * 1.55 * 6);
+    overflow: hidden;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .overview.expanded {
+    max-height: none;
   }
   .overview :global(p) {
-    margin: 0 0 4px;
+    margin: 0 0 6px;
+  }
+  .overview :global(p:last-child),
+  .overview :global(ul:last-child),
+  .overview :global(ol:last-child) {
+    margin-bottom: 0;
+  }
+  .overview :global(ul),
+  .overview :global(ol) {
+    margin: 0 0 6px;
+    padding-left: 18px;
   }
   .overview :global(code) {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 12px;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--bg-inset);
+  }
+  .more-toggle {
+    margin-top: 4px;
   }
 
   .list {

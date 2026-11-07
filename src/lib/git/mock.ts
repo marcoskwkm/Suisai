@@ -61,5 +61,9 @@ async function mockGuideAnswer(prompt: string) {
   if (prompt.includes("# Current guide")) {
     return { title: "", overview: "", groups: [{ id: "g1", title: "", explanation: "", newChanges: changes.map((c) => c.id) }] };
   }
-  return { title: "Mock review guide", overview: "A mock guide made in the browser, without an agent.", groups };
+  const overview =
+    "A mock guide made in the browser, without an agent. It groups the changes by top-level folder, so each step " +
+    "shows how the UI handles a group with one or several files. The explanations use `inline code`, **bold** text " +
+    "and lists, like an agent's would, and this overview is long enough to be cut to a few lines in the sidebar.";
+  return { title: "Mock review guide", overview, groups };
 }
