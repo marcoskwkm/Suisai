@@ -263,6 +263,16 @@ describe("markdown", () => {
     expect(renderMarkdown("<img src=x onerror=alert(1)>")).toBe("<p>&lt;img src=x onerror=alert(1)&gt;</p>");
   });
 
+  it("turns mermaid blocks into escaped diagram placeholders", () => {
+    const html = renderMarkdown('Flow:\n\n```mermaid\nflowchart LR\n  A["<b>x</b>"] --> B\n```\n\nAfter.');
+    const source = 'flowchart LR\n  A[&quot;&lt;b&gt;x&lt;/b&gt;&quot;] --&gt; B';
+    expect(html).toBe(
+      `<p>Flow:</p><div class="diagram" data-diagram="${source}"><pre><code>${source}</code></pre></div><p>After.</p>`,
+    );
+    // Other languages stay code blocks.
+    expect(renderMarkdown("```ts\nlet a = 1;\n```")).toBe("<pre><code>let a = 1;</code></pre>");
+  });
+
   it("renders lists, code and emphasis", () => {
     expect(renderMarkdown("Uses `a<b>` and **bold**.\n\n- one\n- *two*")).toBe(
       "<p>Uses <code>a&lt;b&gt;</code> and <strong>bold</strong>.</p><ul><li>one</li><li><em>two</em></li></ul>",

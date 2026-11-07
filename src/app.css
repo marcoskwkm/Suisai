@@ -131,3 +131,28 @@ kbd {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* Expanded diagram from a review guide (see src/lib/guide/diagrams.ts). */
+.diagram-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: zoom-out;
+}
+.diagram-overlay-frame {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  max-width: 96vw;
+  max-height: 94vh;
+  overflow: auto;
+}
+.diagram-overlay-frame svg {
+  display: block;
+}

@@ -72,7 +72,7 @@ Suisai can ask an AI agent to write a review guide for the diff: the changes gro
 
 The agent runs on your computer, in the repository, with read-only tools. Guides are saved in `~/Library/Caches/com.marcoskwkm.suisai`, one per repository and set of `git diff` arguments. When the diff changes (press <kbd>r</kbd>, or open `ss` again), the guide updates itself: changes that are still there keep their place, removed ones disappear right away, and the agent only gets the new or rewritten changes to place, plus a list of what each step lost so it can update those explanations. If most of the diff is new, the guide is written again from scratch.
 
-The agent settings let you pick the model and edit the prompt's instructions for grouping and writing.
+Explanations can include diagrams and charts (flowcharts, sequence and state diagrams, pie and bar charts), which the agent writes in [Mermaid](https://mermaid.js.org) and Suisai draws in the app. The agent settings let you pick the model and edit the prompt's instructions for grouping and writing.
 
 In the guide, <kbd>Tab</kbd> / <kbd>[</kbd> <kbd>]</kbd> move between steps, and <kbd>n</kbd> / <kbd>p</kbd> move between changes, continuing into the next step.
 

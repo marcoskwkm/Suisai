@@ -1,6 +1,9 @@
 // A small Markdown renderer for guide explanations: paragraphs, lists, code
 // blocks, inline code, bold and italics. Everything else is plain text, and
 // all text is escaped, so the agent's output cannot inject HTML.
+//
+// ```mermaid blocks become diagram placeholders: they show the source until
+// diagrams.ts draws them.
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -38,12 +41,18 @@ export function renderMarkdown(src: string): string {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (/^\s*```/.test(line)) {
+    const fence = /^\s*```\s*([\w-]*)/.exec(line);
+    if (fence) {
       flushPara();
       flushList();
       const code: string[] = [];
       while (++i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i]);
-      out.push(`<pre><code>${escape(code.join("\n"))}</code></pre>`);
+      const source = escape(code.join("\n"));
+      if (fence[1].toLowerCase() === "mermaid") {
+        out.push(`<div class="diagram" data-diagram="${source}"><pre><code>${source}</code></pre></div>`);
+      } else {
+        out.push(`<pre><code>${source}</code></pre>`);
+      }
       continue;
     }
     const item = /^\s*(?:([-*+])|(\d+)[.)])\s+(.*)$/.exec(line);

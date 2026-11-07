@@ -1,7 +1,9 @@
 <script lang="ts">
   import { groupFiles } from "../guide/guide";
   import type { FileStatus } from "../types";
+  import { diagrams } from "../guide/diagrams";
   import { renderMarkdown } from "../guide/markdown";
+  import { resolvedTheme } from "../theme.svelte";
   import { AGENT_NAMES, guideStore as gs } from "../guide/store.svelte";
 
   interface Props {
@@ -139,7 +141,15 @@
       </div>
       <!-- Escaped by renderMarkdown. -->
       {#if guide.overview}
-        <div class="overview" class:expanded={overviewOpen} bind:this={overviewEl}>{@html renderMarkdown(guide.overview)}</div>
+        {@const overviewHtml = renderMarkdown(guide.overview)}
+        <div
+          class="overview"
+          class:expanded={overviewOpen}
+          bind:this={overviewEl}
+          use:diagrams={{ html: overviewHtml, theme: resolvedTheme() }}
+        >
+          {@html overviewHtml}
+        </div>
         {#if overviewLong}
           <button class="link more-toggle" onclick={() => (overviewOpen = !overviewOpen)}>
             {overviewOpen ? "Show less" : "Show more"}
@@ -396,6 +406,10 @@
   .overview :global(ol) {
     margin: 0 0 6px;
     padding-left: 18px;
+  }
+  .overview :global(.diagram svg) {
+    max-width: 100%;
+    height: auto;
   }
   .overview :global(code) {
     font-family: var(--font-mono);

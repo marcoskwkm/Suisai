@@ -53,9 +53,14 @@ async function mockGuideAnswer(prompt: string) {
   const changes = [...prompt.matchAll(/^### ([cn]\d+) · (\S+)/gm)].map((m) => ({ id: m[1], dir: m[2].split("/")[0] }));
   const byDir = new Map<string, string[]>();
   for (const c of changes) byDir.set(c.dir, [...(byDir.get(c.dir) ?? []), c.id]);
-  const groups = [...byDir].map(([dir, ids]) => ({
+  // Every other step shows a diagram or a chart, like an agent's would.
+  const pictures = [
+    "```mermaid\nflowchart LR\n  A[\"setItems()\"] --> B[\"sync()\"] --> C[\"syncGuide()\"]\n  C -- current --> D[\"stale = false\"]\n  C -- discard --> E[\"discard(); discarded = true\"]\n  C -- update --> F[\"#set(pruned)\"]\n  F -- job & agent --> G[\"#start(job)\"] -- error --> H[\"#failed = job\"] --> I[\"retry()\"]\n  F -- job, no agent --> J[\"stale = true\"]\n```",
+    "```mermaid\nxychart-beta\n  title \"Lines changed per file\"\n  x-axis [Sidebar, tree.test, tree]\n  y-axis \"Lines\" 0 --> 40\n  bar [13, 6, 38]\n```",
+  ];
+  const groups = [...byDir].map(([dir, ids], i) => ({
     title: `Changes in ${dir}`,
-    explanation: `Mock explanation for \`${dir}\`.\n\n- First point with **bold** text\n- Second point`,
+    explanation: `Mock explanation for \`${dir}\`.\n\n- First point with **bold** text\n- Second point\n\n${pictures[i % pictures.length]}`,
     changes: ids,
   }));
   if (prompt.includes("# Current guide")) {

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { groupSections, groupStats, type Guide } from "../guide/guide";
   import type { ChangeItem } from "../guide/items";
+  import { diagrams } from "../guide/diagrams";
   import { renderMarkdown } from "../guide/markdown";
+  import { resolvedTheme } from "../theme.svelte";
   import type { FileDiff, ViewMode } from "../types";
   import { LINE_H } from "./DiffView.svelte";
   import FileView from "./FileView.svelte";
@@ -94,7 +96,7 @@
         </div>
         <h1>{group.title}</h1>
         <!-- Escaped by renderMarkdown. -->
-        <div class="prose">{@html html}</div>
+        <div class="prose" use:diagrams={{ html, theme: resolvedTheme() }}>{@html html}</div>
       </header>
 
       {#each sections as s, i (s.file.id + ":" + group.id)}
@@ -165,8 +167,15 @@
     margin: 0 auto;
   }
   .step {
-    max-width: 760px;
     margin-bottom: 20px;
+  }
+  /* Text stays in a readable column; diagrams can use the full width. */
+  .step h1,
+  .prose :global(p),
+  .prose :global(ul),
+  .prose :global(ol),
+  .prose :global(pre) {
+    max-width: 760px;
   }
   .eyebrow {
     display: flex;
@@ -238,6 +247,62 @@
   .prose :global(pre code) {
     padding: 0;
     background: none;
+  }
+  .prose :global(.diagram) {
+    position: relative;
+    width: fit-content;
+    min-width: min(100%, 760px);
+    max-width: 100%;
+    margin: 4px 0 12px;
+    padding: 16px;
+    border: 1px solid var(--border-muted);
+    border-radius: 8px;
+    background: var(--bg);
+    overflow-x: auto;
+    text-align: center;
+  }
+  .prose :global(.diagram svg) {
+    display: block;
+    margin: 0 auto;
+  }
+  .prose :global(.diagram-expand) {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  .prose :global(.diagram:hover .diagram-expand),
+  .prose :global(.diagram-expand:focus-visible) {
+    opacity: 1;
+  }
+  .prose :global(.diagram-expand:hover) {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+  /* Until drawn (or if it cannot be), the diagram shows its source. */
+  .prose :global(.diagram pre) {
+    margin: 0;
+    text-align: left;
+  }
+  .prose :global(.diagram.failed)::after {
+    content: "This diagram could not be drawn (hover for details).";
+    display: block;
+    margin-top: 6px;
+    font-size: 11.5px;
+    color: var(--fg-muted);
+    text-align: left;
   }
 
   .card {
