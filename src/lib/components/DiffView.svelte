@@ -24,9 +24,14 @@
     onexpand: (gap: number, direction: "up" | "down" | "all") => void;
     /** Opens the new file in an editor at a line. Without it, line numbers are not links. */
     onopenline?: (no: number) => void;
+    /**
+     * Inline mode: the diff takes its full height and this element scrolls it
+     * (with other content around it). Only the rows in its viewport are drawn.
+     */
+    outer?: HTMLElement | null;
   }
 
-  let { rows, view, resetKey, text, tokens, intraline, maxChars, numberDigits, onexpand, onopenline }: Props = $props();
+  let { rows, view, resetKey, text, tokens, intraline, maxChars, numberDigits, onexpand, onopenline, outer = null }: Props = $props();
 
   let scroller: HTMLDivElement;
   let scrollTop = $state(0);
@@ -58,11 +63,38 @@
     return Math.max(0, lo);
   }
 
+  // In inline mode, the part of the diff inside the outer element's viewport.
+  let inlineTop = $state(0);
+  let inlineHeight = $state(0);
+  $effect(() => {
+    const o = outer;
+    if (!o) return;
+    const update = () => {
+      const vp = o.getBoundingClientRect();
+      const me = scroller.getBoundingClientRect();
+      inlineTop = Math.max(0, vp.top - me.top);
+      inlineHeight = Math.max(0, Math.min(vp.bottom, me.bottom) - Math.max(vp.top, me.top));
+    };
+    update();
+    o.addEventListener("scroll", update, { passive: true });
+    // Content above this diff can grow (e.g. other files finish loading).
+    const ro = new ResizeObserver(update);
+    ro.observe(o);
+    if (o.firstElementChild) ro.observe(o.firstElementChild);
+    ro.observe(scroller);
+    return () => {
+      o.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  });
+
   const OVERSCAN = 10;
   const range = $derived.by(() => {
     if (rows.length === 0) return { start: 0, end: 0 };
-    const start = Math.max(0, rowAt(scrollTop) - OVERSCAN);
-    const end = Math.min(rows.length, rowAt(scrollTop + height) + OVERSCAN + 1);
+    const top = outer ? inlineTop : scrollTop;
+    const h = outer ? inlineHeight : height;
+    const start = Math.max(0, rowAt(top) - OVERSCAN);
+    const end = Math.min(rows.length, rowAt(top + h) + OVERSCAN + 1);
     return { start, end };
   });
   const visible = $derived(rows.slice(range.start, range.end));
@@ -252,6 +284,12 @@
   export function scrollToEdge(edge: "top" | "bottom") {
     scroller.scrollTop = edge === "top" ? 0 : total;
   }
+  /** Inline mode: where each block of changes starts, in pixels from the top of the diff. */
+  export function changePositions(): number[] {
+    return starts.map((i) => offsets[i]);
+  }
+  export const element = () => scroller;
+
   /** Scrolls to the next/previous block of changes. Returns false when there is none. */
   export function jumpChange(dir: 1 | -1): boolean {
     const margin = 3 * LINE_H;
@@ -299,7 +337,7 @@
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="diff" class:split={view === "split"} class:unified={view === "unified"} style:--digits={numberDigits}>
+<div class="diff" class:split={view === "split"} class:unified={view === "unified"} class:inline={outer !== null} style:--digits={numberDigits}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="scroller"
@@ -398,6 +436,14 @@
     overflow-x: hidden;
     outline: none;
     overscroll-behavior: contain;
+  }
+  .inline {
+    height: auto;
+  }
+  .inline .scroller {
+    flex: none;
+    overflow: hidden;
+    overscroll-behavior: auto;
   }
   .sizer {
     position: relative;

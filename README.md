@@ -61,6 +61,18 @@ git config --global suisai.editorUrl 'cursor://file{path}:{line}'   # Cursor
 git config --global suisai.editorUrl 'zed://file{path}:{line}'      # Zed
 ```
 
+## AI review guides
+
+Suisai can ask an AI agent to write a review guide for the diff: the changes grouped by purpose, in an order that explains the change step by step, with an explanation for each group.
+
+1. Install [Claude Code](https://claude.com/claude-code) or [Codex](https://github.com/openai/codex) (sign in to Codex with your ChatGPT account using `codex login`).
+2. Open the **Guide** tab in the sidebar (or press <kbd>a</kbd>), click **Connect an AI agent** and pick one.
+3. Click **Generate guide**.
+
+The agent runs on your computer, in the repository, with read-only tools. Guides are saved in `~/Library/Caches/com.marcoskwkm.suisai`, one per repository and set of `git diff` arguments. When the diff changes (press <kbd>r</kbd>, or open `ss` again), the guide updates itself: changes that are still there keep their place, removed ones disappear right away, and the agent only gets the new or rewritten changes to place, plus a list of what each step lost so it can update those explanations. If most of the diff is new, the guide is written again from scratch.
+
+In the guide, <kbd>Tab</kbd> / <kbd>[</kbd> <kbd>]</kbd> move between steps, and <kbd>n</kbd> / <kbd>p</kbd> move between changes, continuing into the next step.
+
 ## Keyboard shortcuts
 
 | Key | Action |
@@ -76,6 +88,7 @@ git config --global suisai.editorUrl 'zed://file{path}:{line}'      # Zed
 | <kbd>b</kbd> | Toggle sidebar |
 | <kbd>t</kbd> | Cycle theme (system / light / dark) |
 | <kbd>/</kbd> | Filter files |
+| <kbd>a</kbd> | Switch between files and the review guide |
 | <kbd>o</kbd> | Open file in editor |
 | <kbd>r</kbd> | Reload |
 | <kbd>q</kbd> | Close window |

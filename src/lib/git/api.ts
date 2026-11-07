@@ -20,3 +20,25 @@ export const readFile = (side: Side, path: string, blob: string | null, base64 =
 export const editorTarget = (path: string) => invoke<string | null>("editor_target", { path });
 
 export const openInEditor = (path: string, line: number) => invoke<void>("open_in_editor", { path, line });
+
+// ---- AI review guides ----
+
+export interface AgentInfo {
+  kind: "claude" | "codex";
+  /** Where the CLI is installed, or null if it was not found. */
+  path: string | null;
+}
+
+export const aiAgents = () => invoke<AgentInfo[]>("ai_agents");
+
+/** Runs the agent in the repository and returns the JSON it answered with. */
+export const aiRun = (agent: AgentInfo["kind"], model: string | null, prompt: string, schema: object) =>
+  invoke<unknown>("ai_run", { agent, model, prompt, schema });
+
+export const aiCancel = () => invoke<void>("ai_cancel");
+
+/** The cached guide for this diff, as JSON text. */
+export const guideLoad = () => invoke<string | null>("guide_load");
+
+/** Saves (or, with null, deletes) the cached guide for this diff. */
+export const guideSave = (data: string | null) => invoke<void>("guide_save", { data });

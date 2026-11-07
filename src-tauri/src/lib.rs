@@ -1,3 +1,4 @@
+mod ai;
 mod cli;
 mod source;
 
@@ -9,6 +10,10 @@ struct AppState {
     info: SessionInfo,
     source: Option<Source>,
     temp_dir: PathBuf,
+    /// Identifies this diff (repo + arguments, or the compared paths) for the guide cache.
+    cache_key: String,
+    /// Where AI agents run: the repo root, or the right-hand directory.
+    work_dir: PathBuf,
 }
 
 #[tauri::command]
@@ -53,12 +58,74 @@ async fn open_in_editor(state: tauri::State<'_, AppState>, path: String, line: u
     }
 }
 
+#[tauri::command]
+async fn ai_agents() -> Vec<ai::AgentInfo> {
+    tauri::async_runtime::spawn_blocking(ai::detect_agents).await.unwrap_or_default()
+}
+
+#[tauri::command]
+async fn ai_run(
+    state: tauri::State<'_, AppState>,
+    agent: ai::AgentKind,
+    model: Option<String>,
+    prompt: String,
+    schema: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let cwd = state.work_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || ai::run(agent, model.as_deref(), &cwd, &prompt, &schema))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn ai_cancel() {
+    ai::cancel();
+}
+
+fn cache_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().app_cache_dir().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn guide_load(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Option<String> {
+    ai::load_guide(&cache_dir(&app).ok()?, &state.cache_key)
+}
+
+#[tauri::command]
+fn guide_save(app: tauri::AppHandle, state: tauri::State<'_, AppState>, data: Option<String>) -> Result<(), String> {
+    let dir = cache_dir(&app)?;
+    match data {
+        Some(d) => ai::save_guide(&dir, &state.cache_key, &d),
+        None => {
+            ai::delete_guide(&dir, &state.cache_key);
+            Ok(())
+        }
+    }
+}
+
 fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string())
 }
 
 fn canonical(p: &Path) -> PathBuf {
     p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+}
+
+/// Cache key and agent working directory for a session.
+fn guide_context(source: Option<&Source>, cwd: &Path) -> (String, PathBuf) {
+    match source {
+        Some(Source::Repo { root, args, .. }) => (format!("repo\0{}\0{}", root.display(), args.join("\0")), root.clone()),
+        Some(Source::Paths { right_original, .. }) => {
+            let in_difftool = right_original.to_string_lossy().contains("git-difftool.");
+            let dir = if right_original.is_dir() { right_original.clone() } else { right_original.parent().unwrap_or(cwd).to_path_buf() };
+            match source::git_root(cwd) {
+                // difftool's temp dirs change on every run: key on the repo instead.
+                Ok(root) if in_difftool || !right_original.starts_with(&root) => (format!("difftool\0{}", root.display()), root),
+                _ => (format!("paths\0{}", right_original.display()), dir),
+            }
+        }
+        None => (String::new(), cwd.to_path_buf()),
+    }
 }
 
 fn build_session(inv: cli::Invocation, temp_dir: &Path) -> (SessionInfo, Option<Source>) {
@@ -152,12 +219,25 @@ pub fn run() {
     }
 
     let temp_dir = std::env::temp_dir().join(format!("suisai-{}", std::process::id()));
+    let cwd_for_guide = invocation.cwd.clone();
     let (info, source) = build_session(invocation, &temp_dir);
+    let (cache_key, work_dir) = guide_context(source.as_ref(), &cwd_for_guide);
     let title = if info.subtitle.is_empty() { info.title.clone() } else { format!("{} — {}", info.title, info.subtitle) };
 
     let app = tauri::Builder::default()
-        .manage(AppState { info, source, temp_dir })
-        .invoke_handler(tauri::generate_handler![get_session, get_diff, read_file, editor_target, open_in_editor])
+        .manage(AppState { info, source, temp_dir, cache_key, work_dir })
+        .invoke_handler(tauri::generate_handler![
+            get_session,
+            get_diff,
+            read_file,
+            editor_target,
+            open_in_editor,
+            ai_agents,
+            ai_run,
+            ai_cancel,
+            guide_load,
+            guide_save
+        ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_title(&title);
@@ -170,6 +250,7 @@ pub fn run() {
 
     app.run(|handle, event| {
         if let RunEvent::Exit = event {
+            ai::cancel();
             let dir = &handle.state::<AppState>().temp_dir;
             let _ = std::fs::remove_dir_all(dir);
         }

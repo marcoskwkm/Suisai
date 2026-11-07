@@ -1,7 +1,12 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount, tick } from "svelte";
+  import AgentSettings from "./lib/components/AgentSettings.svelte";
   import FileView from "./lib/components/FileView.svelte";
+  import GuidePanel from "./lib/components/GuidePanel.svelte";
+  import GuideView from "./lib/components/GuideView.svelte";
+  import { changeItems } from "./lib/guide/items";
+  import { guideStore as gs } from "./lib/guide/store.svelte";
   import Shortcuts from "./lib/components/Shortcuts.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import { clearContentCache, prefetch } from "./lib/content";
@@ -38,6 +43,8 @@
   $effect(() => savePref("ignoreWhitespace", ignoreWhitespace));
   $effect(() => savePref("sidebarWidth", sidebarWidth));
   $effect(() => savePref("sidebarVisible", sidebarVisible));
+  let mode = $state<"files" | "guide">(pref("sidebarMode", "files"));
+  $effect(() => savePref("sidebarMode", mode));
 
   // ---- data ----
   let session = $state.raw<SessionInfo | null>(null);
@@ -47,8 +54,10 @@
   let loading = $state(true);
   let filter = $state("");
   let showHelp = $state(false);
+  let showSettings = $state(false);
 
   let fileView: FileView | undefined = $state();
+  let guideView: GuideView | undefined = $state();
   let sidebar: Sidebar | undefined = $state();
 
   const visibleFiles = $derived.by(() => {
@@ -58,6 +67,47 @@
   const ordered = $derived(fileOrder(buildTree(visibleFiles)));
   const selected = $derived(files.find((f) => f.id === selectedId) ?? null);
   const selectedIndex = $derived(ordered.findIndex((f) => f.id === selectedId));
+
+  // ---- review guide ----
+  gs.init();
+  let step = $state(0);
+  const guide = $derived(gs.guide);
+  const guideShown = $derived(mode === "guide" && guide !== null && guide.groups.length > 0);
+  const shownFiles = $derived(new Map(files.map((f) => [f.id, f])));
+  // Steps can disappear when the guide updates.
+  $effect(() => {
+    const n = guide?.groups.length ?? 0;
+    if (step >= n) step = Math.max(0, n - 1);
+  });
+
+  function selectStep(i: number) {
+    const n = guide?.groups.length ?? 0;
+    if (n) step = Math.min(n - 1, Math.max(0, i));
+  }
+
+  /** Opens a file in the editor, if it is on disk. */
+  async function openFile(f: FileDiff, line?: number) {
+    if (!f.newPath) return;
+    try {
+      if (await editorTarget(f.newPath)) await openInEditor(f.newPath, line ?? firstChangedLine(f));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function showFile(f: FileDiff) {
+    mode = "files";
+    filter = "";
+    selectedId = f.id;
+  }
+
+  /** Toolbar button: generates the guide, or switches to it. */
+  function guideButton() {
+    mode = "guide";
+    sidebarVisible = true;
+    if (!guide && gs.connected && !gs.busy) gs.generate();
+    else if (!gs.connected && !guide) showSettings = true;
+  }
 
   // ---- opening the selected file in an editor ----
   /** Where the selected file is on disk, if it can be opened. */
@@ -104,7 +154,10 @@
         const parsed = parsePatch(patch);
         return session!.mode === "paths" ? relativizePaths(parsed, session!.leftRoot!, session!.rightRoot!, session!.fileName) : parsed;
       };
-      let next = prepare(out.patch);
+      const full = prepare(out.patch);
+      // Guides are made from the full diff, whitespace changes included.
+      gs.setItems(changeItems(full));
+      let next = full;
       if (out.ignoreWhitespacePatch !== null) next = applyIgnoreWhitespace(next, prepare(out.ignoreWhitespacePatch));
       const previous = selected;
       files = next;
@@ -158,6 +211,7 @@
     if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
 
+    if (showSettings) return;
     if (showHelp) {
       if (e.key === "Escape" || e.key === "?" || e.key === "q") {
         showHelp = false;
@@ -166,7 +220,8 @@
       return;
     }
 
-    const fv = fileView;
+    const fv = guideShown ? guideView : fileView;
+    const next = (d: 1 | -1) => (guideShown ? selectStep(step + d) : selectRelative(d));
     const actions: Record<string, () => void> = {
       j: () => fv?.scrollLines(3),
       ArrowDown: () => fv?.scrollLines(3),
@@ -180,22 +235,29 @@
       Home: () => fv?.scrollToEdge("top"),
       End: () => fv?.scrollToEdge("bottom"),
       n: () => {
-        if (!fv?.jumpChange(1)) selectRelative(1);
+        if (!fv?.jumpChange(1)) next(1);
       },
       p: () => {
-        if (!fv?.jumpChange(-1)) selectRelative(-1);
+        if (!fv?.jumpChange(-1)) next(-1);
       },
-      Tab: () => selectRelative(e.shiftKey ? -1 : 1),
-      "]": () => selectRelative(1),
-      "[": () => selectRelative(-1),
+      Tab: () => next(e.shiftKey ? -1 : 1),
+      "]": () => next(1),
+      "[": () => next(-1),
+      a: () => {
+        mode = mode === "guide" ? "files" : "guide";
+        sidebarVisible = true;
+      },
       s: () => (view = view === "split" ? "unified" : "split"),
       w: toggleWhitespace,
       b: () => (sidebarVisible = !sidebarVisible),
       t: cycleTheme,
-      o: openSelected,
+      o: () => {
+        if (!guideShown) openSelected();
+      },
       r: reload,
       "/": () => {
         sidebarVisible = true;
+        mode = "files";
         tick().then(() => sidebar?.focusFilter());
       },
       "?": () => (showHelp = true),
@@ -253,7 +315,20 @@
   <!-- Always rendered so collapsing can animate; inert while hidden. -->
   <div class="sidebar-wrap" inert={!sidebarVisible} aria-hidden={!sidebarVisible}>
     <div class="sidebar-inner">
-      <Sidebar bind:this={sidebar} {session} files={visibleFiles} {selectedId} bind:filter onselect={(f) => (selectedId = f.id)} />
+      <Sidebar
+        bind:this={sidebar}
+        {session}
+        files={visibleFiles}
+        {selectedId}
+        bind:filter
+        onselect={(f) => (selectedId = f.id)}
+        {mode}
+        onmode={(m) => (mode = m)}
+      >
+        {#snippet guide()}
+          <GuidePanel selected={step} onselect={selectStep} onsettings={() => (showSettings = true)} />
+        {/snippet}
+      </Sidebar>
     </div>
   </div>
   <div class="resizer" role="separator" aria-orientation="vertical" onpointerdown={startResize}></div>
@@ -275,7 +350,10 @@
         </svg>
       </button>
       <div class="file-info">
-        {#if selected}
+        {#if guideShown && guide}
+          <span class="guide-label">Review guide</span>
+          <span class="path guide-step" title={guide.groups[step]?.title}>{guide.groups[step]?.title}</span>
+        {:else if selected}
           <span class="badge {selected.status}">{STATUS_LABEL[selected.status]}</span>
           {#snippet pathText(f: FileDiff)}
             {#if (f.status === "renamed" || f.status === "copied") && f.oldPath !== f.newPath}
@@ -301,8 +379,29 @@
         {/if}
       </div>
       <div class="controls">
-        {#if ordered.length > 0}
+        {#if guideShown && guide}
+          <span class="position">Step {step + 1} / {guide.groups.length}</span>
+        {:else if ordered.length > 0}
           <span class="position">{selectedIndex + 1} / {ordered.length}</span>
+        {/if}
+        {#if files.length > 0}
+          <button
+            class="guide-button"
+            class:active={mode === "guide"}
+            onclick={guideButton}
+            title={gs.connected ? "AI review guide (a)" : "Connect an AI agent to generate a review guide"}
+            disabled={gs.busy === "generating" && mode === "guide"}
+          >
+            {#if gs.busy}
+              <span class="spinner"></span>
+            {:else}
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 1.5c.3 2.9 1.6 4.2 4.5 4.5-2.9.3-4.2 1.6-4.5 4.5-.3-2.9-1.6-4.2-4.5-4.5C6.4 5.7 7.7 4.4 8 1.5Z" />
+                <path d="M12.5 9.5c.15 1.4.8 2.05 2 2.25-1.2.2-1.85.85-2 2.25-.15-1.4-.8-2.05-2-2.25 1.2-.2 1.85-.85 2-2.25Z" opacity=".7" />
+              </svg>
+            {/if}
+            {#if gs.busy === "generating"}Generating…{:else if guide || !gs.connected}Guide{:else}Generate guide{/if}
+          </button>
         {/if}
         <label class="toggle" title="Hide whitespace changes (w)">
           <input type="checkbox" checked={ignoreWhitespace} onchange={toggleWhitespace} />
@@ -348,6 +447,18 @@
           <h2>No changes</h2>
           <p><code>{session?.subtitle}</code> has nothing to show.</p>
         </div>
+      {:else if guideShown && guide}
+        <GuideView
+          bind:this={guideView}
+          {guide}
+          index={step}
+          byKey={gs.byKey}
+          {shownFiles}
+          {view}
+          onselect={selectStep}
+          onopen={openFile}
+          onshowfile={showFile}
+        />
       {:else if selected}
         <FileView bind:this={fileView} file={selected} {view} onopenline={canOpen ? openSelected : undefined} />
       {/if}
@@ -356,6 +467,9 @@
 
   {#if showHelp}
     <Shortcuts onclose={() => (showHelp = false)} />
+  {/if}
+  {#if showSettings}
+    <AgentSettings onclose={() => (showSettings = false)} />
   {/if}
 </div>
 
@@ -519,6 +633,59 @@
     font-size: 12px;
     color: var(--fg-muted);
     font-variant-numeric: tabular-nums;
+  }
+  .guide-label {
+    flex: none;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 999px;
+    color: var(--accent);
+    border: 1px solid currentColor;
+  }
+  .guide-step {
+    font-family: var(--font-ui);
+    font-size: 13px;
+  }
+  .guide-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--fg);
+  }
+  .guide-button svg {
+    color: var(--accent);
+  }
+  .guide-button:hover {
+    border-color: var(--accent);
+  }
+  .guide-button.active {
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+    border-color: var(--accent);
+  }
+  .guide-button:disabled {
+    cursor: default;
+  }
+  .spinner {
+    width: 11px;
+    height: 11px;
+    border-radius: 999px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   .toggle {
     display: flex;

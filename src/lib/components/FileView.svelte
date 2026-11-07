@@ -10,9 +10,13 @@
     view: ViewMode;
     /** Opens the new file in an editor at a line, when it is on disk. */
     onopenline?: (no: number) => void;
+    /** Inline mode (see DiffView): the element that scrolls this file's diff. */
+    outer?: HTMLElement | null;
+    /** Whether unchanged lines between hunks can be expanded. */
+    expandable?: boolean;
   }
 
-  let { file, view, onopenline }: Props = $props();
+  let { file, view, onopenline, outer = null, expandable = true }: Props = $props();
 
   let diffView: DiffView | undefined = $state();
   /**
@@ -121,7 +125,8 @@
 
   // Expanding needs the full contents of each side that exists.
   const canExpand = $derived(
-    content !== null && (df.oldPath === null || oldLines !== null) && (df.newPath === null || newLines !== null),
+    expandable &&
+      content !== null && (df.oldPath === null || oldLines !== null) && (df.newPath === null || newLines !== null),
   );
   const gaps = $derived(
     computeGaps(df.hunks, df.oldPath === null ? 0 : (oldLines?.length ?? null), df.newPath === null ? 0 : (newLines?.length ?? null)),
@@ -180,9 +185,11 @@
   export const scrollPage = (d: 1 | -1) => diffView?.scrollPage(d);
   export const scrollToEdge = (e: "top" | "bottom") => diffView?.scrollToEdge(e);
   export const jumpChange = (d: 1 | -1) => diffView?.jumpChange(d) ?? false;
+  export const changePositions = () => diffView?.changePositions() ?? [];
+  export const element = () => diffView?.element();
 </script>
 
-<div class="file-view">
+<div class="file-view" class:inline={outer !== null}>
   {#if notice}
     <div class="notice">{notice}</div>
   {/if}
@@ -204,6 +211,7 @@
         {numberDigits}
         {onexpand}
         {onopenline}
+        {outer}
       />
     {/if}
   </div>
@@ -219,6 +227,13 @@
   .body {
     flex: 1;
     min-height: 0;
+  }
+  .file-view.inline {
+    height: auto;
+  }
+  .inline .message {
+    height: auto;
+    padding: 16px;
   }
   .notice {
     padding: 6px 12px;

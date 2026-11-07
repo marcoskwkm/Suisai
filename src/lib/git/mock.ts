@@ -29,6 +29,35 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown>): Pr
     }
     case "editor_target":
       return null;
+    case "ai_agents":
+      return [
+        { kind: "claude", path: "/mock/claude" },
+        { kind: "codex", path: null },
+      ];
+    case "ai_run":
+      return mockGuideAnswer(String(args.prompt));
+    case "guide_load":
+      return null;
+    case "guide_save":
+    case "ai_cancel":
+      return null;
   }
   throw new Error(`unknown command ${cmd}`);
+}
+
+/** A stand-in agent answer: groups the prompt's changes by top-level folder. */
+async function mockGuideAnswer(prompt: string) {
+  await new Promise((r) => setTimeout(r, 1500));
+  const changes = [...prompt.matchAll(/^### ([cn]\d+) · (\S+)/gm)].map((m) => ({ id: m[1], dir: m[2].split("/")[0] }));
+  const byDir = new Map<string, string[]>();
+  for (const c of changes) byDir.set(c.dir, [...(byDir.get(c.dir) ?? []), c.id]);
+  const groups = [...byDir].map(([dir, ids]) => ({
+    title: `Changes in ${dir}`,
+    explanation: `Mock explanation for \`${dir}\`.\n\n- First point with **bold** text\n- Second point`,
+    changes: ids,
+  }));
+  if (prompt.includes("# Current guide")) {
+    return { title: "", overview: "", groups: [{ id: "g1", title: "", explanation: "", newChanges: changes.map((c) => c.id) }] };
+  }
+  return { title: "Mock review guide", overview: "A mock guide made in the browser, without an agent.", groups };
 }

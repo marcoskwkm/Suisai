@@ -5,9 +5,10 @@
     [
       "Files",
       [
-        [["Tab", "]"], "Next file"],
-        [["⇧ Tab", "["], "Previous file"],
+        [["Tab", "]"], "Next file (or guide step)"],
+        [["⇧ Tab", "["], "Previous file (or step)"],
         [["/"], "Filter files"],
+        [["a"], "Files / review guide"],
         [["o"], "Open file in editor"],
         [["b"], "Toggle sidebar"],
       ],

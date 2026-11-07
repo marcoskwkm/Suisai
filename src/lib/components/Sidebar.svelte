@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { buildTree, flatten, type TreeNode } from "../tree";
   import type { FileDiff, FileStatus, SessionInfo } from "../types";
 
@@ -8,13 +9,17 @@
     selectedId: string | null;
     filter: string;
     onselect: (file: FileDiff) => void;
+    mode: "files" | "guide";
+    onmode: (mode: "files" | "guide") => void;
+    /** Shown instead of the file tree in guide mode. */
+    guide: Snippet;
   }
 
-  let { session, files, selectedId, filter = $bindable(), onselect }: Props = $props();
+  let { session, files, selectedId, filter = $bindable(), onselect, mode, onmode, guide }: Props = $props();
 
   let collapsed = $state(new Set<string>());
-  let list: HTMLDivElement;
-  let filterInput: HTMLInputElement;
+  let list: HTMLDivElement | undefined = $state();
+  let filterInput: HTMLInputElement | undefined = $state();
 
   const tree = $derived(buildTree(files));
   const rows = $derived(flatten(tree, collapsed));
@@ -37,8 +42,8 @@
   });
 
   export function focusFilter() {
-    filterInput.focus();
-    filterInput.select();
+    filterInput?.focus();
+    filterInput?.select();
   }
 </script>
 
@@ -47,6 +52,21 @@
     <div class="title" title={session?.title}>{session?.title ?? ""}</div>
     {#if session?.subtitle}<div class="subtitle" title={session.subtitle}>{session.subtitle}</div>{/if}
   </header>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected={mode === "files"} class:active={mode === "files"} onclick={() => onmode("files")}>Files</button>
+    <button role="tab" aria-selected={mode === "guide"} class:active={mode === "guide"} onclick={() => onmode("guide")} title="AI review guide (a)">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 1.5c.3 2.9 1.6 4.2 4.5 4.5-2.9.3-4.2 1.6-4.5 4.5-.3-2.9-1.6-4.2-4.5-4.5C6.4 5.7 7.7 4.4 8 1.5Z" />
+        <path d="M12.5 9.5c.15 1.4.8 2.05 2 2.25-1.2.2-1.85.85-2 2.25-.15-1.4-.8-2.05-2-2.25 1.2-.2 1.85-.85 2-2.25Z" opacity=".7" />
+      </svg>
+      Guide
+    </button>
+  </div>
+
+  {#if mode === "guide"}
+    {@render guide()}
+  {:else}
 
   <div class="filter">
     <input
@@ -58,7 +78,7 @@
       onkeydown={(e) => {
         if (e.key === "Escape") {
           filter = "";
-          filterInput.blur();
+          filterInput?.blur();
         }
       }}
     />
@@ -105,6 +125,7 @@
     <span class="add">+{totals.add}</span>
     <span class="del">−{totals.del}</span>
   </footer>
+  {/if}
 </aside>
 
 <style>
@@ -134,6 +155,37 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin: 0 8px 8px;
+    padding: 2px;
+    border-radius: 7px;
+    background: var(--bg-inset);
+  }
+  .tabs button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 24px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .tabs button:hover {
+    color: var(--fg);
+  }
+  .tabs button.active {
+    background: var(--bg);
+    color: var(--fg);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
   }
   .filter {
     padding: 0 8px 8px;
