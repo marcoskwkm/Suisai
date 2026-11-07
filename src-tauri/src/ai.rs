@@ -286,6 +286,19 @@ pub fn save_guide(dir: &Path, key: &str, data: &str) -> Result<(), String> {
     std::fs::rename(&tmp, &file).map_err(|e| e.to_string())
 }
 
+/// The agent settings, shared by every Suisai window (the built app and dev mode).
+pub fn load_settings(dir: &Path) -> Option<String> {
+    std::fs::read_to_string(dir.join("settings.json")).ok()
+}
+
+pub fn save_settings(dir: &Path, data: &str) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let file = dir.join("settings.json");
+    let tmp = file.with_extension("tmp");
+    std::fs::write(&tmp, data).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &file).map_err(|e| e.to_string())
+}
+
 pub fn delete_guide(dir: &Path, key: &str) {
     let _ = std::fs::remove_file(cache_file(dir, key));
 }

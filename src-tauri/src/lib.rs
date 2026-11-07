@@ -103,6 +103,16 @@ fn guide_save(app: tauri::AppHandle, state: tauri::State<'_, AppState>, data: Op
     }
 }
 
+#[tauri::command]
+fn settings_load(app: tauri::AppHandle) -> Option<String> {
+    ai::load_settings(&app.path().app_config_dir().ok()?)
+}
+
+#[tauri::command]
+fn settings_save(app: tauri::AppHandle, data: String) -> Result<(), String> {
+    ai::save_settings(&app.path().app_config_dir().map_err(|e| e.to_string())?, &data)
+}
+
 fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string())
 }
@@ -236,7 +246,9 @@ pub fn run() {
             ai_run,
             ai_cancel,
             guide_load,
-            guide_save
+            guide_save,
+            settings_load,
+            settings_save
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {

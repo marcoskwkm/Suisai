@@ -172,16 +172,18 @@ ${renderAll(entries)}`;
 /** What it takes to bring a guide up to date with the diff. */
 export type Sync =
   | { kind: "current" }
+  /** None of the guide's changes are in the diff: it was written for other changes. */
+  | { kind: "discard" }
   /**
-   * Changes were only removed: the guide without them, to show right away,
-   * and a job to refresh the explanations of the groups that lost changes.
+   * The guide without the changes that are gone, to show right away, and
+   * the agent job that brings it fully up to date (null if none is needed).
    */
-  | { kind: "pruned"; guide: Guide; job: AgentJob | null }
-  | { kind: "job"; job: AgentJob };
+  | { kind: "update"; guide: Guide; job: AgentJob | null };
 
 /**
  * Compares a guide with the diff's items. Items that are still there keep
- * their group; the agent is only asked about new or changed ones.
+ * their group; the agent is only asked about new or changed ones, and about
+ * the groups that lost changes.
  */
 export function syncGuide(guide: Guide, items: ChangeItem[], agent: AgentKind): Sync {
   const byKey = new Map(items.map((it) => [it.key, it]));
@@ -189,7 +191,10 @@ export function syncGuide(guide: Guide, items: ChangeItem[], agent: AgentKind): 
   const fresh = items.filter((it) => !known.has(it.key));
 
   const kept = guide.groups.map((g) => ({ ...g, keys: g.keys.filter((k) => byKey.has(k)) }));
-  const removedNow = guide.groups.some((g) => g.keys.some((k) => !byKey.has(k)));
+  const remaining = kept.filter((g) => g.keys.length);
+  if (remaining.length === 0) return { kind: "discard" };
+
+  const removedNow = remaining.length < guide.groups.length || kept.some((g, i) => g.keys.length < guide.groups[i].keys.length);
   // Descriptions of what each remaining group lost, including earlier removals not yet explained.
   const lost = new Map<string, string[]>();
   for (const g of guide.groups) {
@@ -199,26 +204,20 @@ export function syncGuide(guide: Guide, items: ChangeItem[], agent: AgentKind): 
     ];
     if (gone.length && g.keys.some((k) => byKey.has(k))) lost.set(g.id, gone);
   }
+  if (fresh.length === 0 && !removedNow && lost.size === 0) return { kind: "current" };
 
-  if (fresh.length === 0) {
-    if (!removedNow && lost.size === 0) return { kind: "current" };
-    const remaining = kept.filter((g) => g.keys.length);
-    const pruned: Guide = {
-      ...guide,
-      groups: remaining,
-      removed: lost.size ? Object.fromEntries(lost) : undefined,
-      updatedAt: Date.now(),
-    };
-    const job = lost.size ? updateJob(pruned, remaining, lost, [], items, agent) : null;
-    return { kind: "pruned", guide: pruned, job };
-  }
+  const pruned: Guide = {
+    ...guide,
+    groups: remaining,
+    removed: lost.size ? Object.fromEntries(lost) : undefined,
+    updatedAt: removedNow ? Date.now() : guide.updatedAt,
+  };
+  if (fresh.length === 0 && lost.size === 0) return { kind: "update", guide: pruned, job: null };
 
   const total = items.reduce((n, it) => n + itemSize(it), 0);
   const added = fresh.reduce((n, it) => n + itemSize(it), 0);
-  const remaining = kept.filter((g) => g.keys.length);
-  if (remaining.length === 0 || added > REGENERATE_ABOVE * total) return { kind: "job", job: fullJob(items, agent) };
-
-  return { kind: "job", job: updateJob(guide, kept, lost, fresh, items, agent) };
+  const job = added > REGENERATE_ABOVE * total ? fullJob(items, agent) : updateJob(pruned, remaining, lost, fresh, items, agent);
+  return { kind: "update", guide: pruned, job };
 }
 
 function updateJob(

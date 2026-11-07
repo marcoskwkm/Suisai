@@ -42,3 +42,8 @@ export const guideLoad = () => invoke<string | null>("guide_load");
 
 /** Saves (or, with null, deletes) the cached guide for this diff. */
 export const guideSave = (data: string | null) => invoke<void>("guide_save", { data });
+
+/** App settings shared by the built app and dev mode, as JSON text. */
+export const settingsLoad = () => invoke<string | null>("settings_load");
+
+export const settingsSave = (data: string) => invoke<void>("settings_save", { data });

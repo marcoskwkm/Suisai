@@ -40,6 +40,8 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown>): Pr
       return null;
     case "guide_save":
     case "ai_cancel":
+    case "settings_load":
+    case "settings_save":
       return null;
   }
   throw new Error(`unknown command ${cmd}`);

@@ -1,35 +1,46 @@
 // State of the review guide: which agent is connected, the guide for the
 // current diff, and the agent job that is running.
 
-import { aiAgents, aiCancel, aiRun, guideLoad, guideSave, type AgentInfo } from "../git/api";
+import { aiAgents, aiCancel, aiRun, guideLoad, guideSave, settingsLoad, settingsSave, type AgentInfo } from "../git/api";
 import { fullJob, parseGuide, syncGuide, type AgentJob, type AgentKind, type Guide } from "./guide";
 import type { ChangeItem } from "./items";
 
 export const AGENT_NAMES: Record<AgentKind, string> = { claude: "Claude Code", codex: "Codex" };
 
-function read<T>(key: string, fallback: T): T {
+interface Settings {
+  agent: AgentKind | null;
+  model: string;
+}
+
+/** Settings from before they were saved on disk, when they lived in the window's storage. */
+function legacySettings(): Settings | null {
   try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : (JSON.parse(v) as T);
+    const agent = localStorage.getItem("aiAgent");
+    if (agent === null) return null;
+    return { agent: JSON.parse(agent), model: JSON.parse(localStorage.getItem("aiModel") ?? '""') };
   } catch {
-    return fallback;
+    return null;
   }
 }
-function write(key: string, value: unknown) {
+
+function parseSettings(text: string | null): Settings | null {
+  if (!text) return null;
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const s = JSON.parse(text) as Partial<Settings>;
+    const agent = s.agent === "claude" || s.agent === "codex" ? s.agent : null;
+    return { agent, model: typeof s.model === "string" ? s.model : "" };
   } catch {
-    // ignore
+    return null;
   }
 }
 
 class GuideStore {
   /** Agent CLIs found on this machine (null until detected). */
   agents = $state.raw<AgentInfo[] | null>(null);
-  /** The agent the user connected, if any. */
-  agent = $state<AgentKind | null>(read("aiAgent", null));
+  /** The agent the user connected, if any. Saved on disk, so the built app and dev mode share it. */
+  agent = $state<AgentKind | null>(null);
   /** Model to ask for; empty uses the CLI's default. */
-  model = $state<string>(read("aiModel", ""));
+  model = $state<string>("");
 
   guide = $state.raw<Guide | null>(null);
   items = $state.raw<ChangeItem[]>([]);
@@ -41,6 +52,8 @@ class GuideStore {
   error = $state<string | null>(null);
   /** The guide no longer matches the diff, and there is no agent to update it. */
   stale = $state(false);
+  /** A saved guide was dropped because none of its changes are in the diff any more. */
+  discarded = $state(false);
 
   /** The connected agent, if its CLI is installed. */
   connected = $derived.by((): AgentKind | null => {
@@ -51,21 +64,35 @@ class GuideStore {
 
   #ready: Promise<void> | null = null;
   #run = 0;
+  /** The job that failed, to retry it. */
+  #failed: AgentJob | null = null;
+  /** The keys of `items`, to tell a reload with the same diff from a changed one. */
+  #itemKeys = "";
 
-  /** Detects agents and loads the cached guide. Safe to call more than once. */
+  /** Detects agents and loads the settings and the cached guide. Safe to call more than once. */
   init(): Promise<void> {
     return (this.#ready ??= (async () => {
-      const [agents, cached] = await Promise.all([aiAgents().catch(() => []), guideLoad().catch(() => null)]);
+      const [agents, cached, saved] = await Promise.all([
+        aiAgents().catch(() => []),
+        guideLoad().catch(() => null),
+        settingsLoad().catch(() => null),
+      ]);
       this.agents = agents;
       this.guide = parseGuide(cached);
+      const settings = parseSettings(saved) ?? legacySettings();
+      if (settings) {
+        this.agent = settings.agent;
+        this.model = settings.model;
+      }
     })());
   }
 
   connect(agent: AgentKind | null, model = this.model) {
     this.agent = agent;
     this.model = model.trim();
-    write("aiAgent", agent);
-    write("aiModel", this.model);
+    settingsSave(JSON.stringify({ agent, model: this.model } satisfies Settings)).catch((e) =>
+      console.error("could not save the settings", e),
+    );
     // An out-of-date guide can be updated now.
     if (agent && this.stale) this.sync();
   }
@@ -73,7 +100,12 @@ class GuideStore {
   /** Called with the diff's items after every (re)load: keeps the guide in sync. */
   async setItems(items: ChangeItem[]) {
     await this.init();
+    const keys = items.map((it) => it.key).join(",");
+    const same = keys === this.#itemKeys;
     this.items = items;
+    this.#itemKeys = keys;
+    // Same diff (e.g. toggling whitespace) while the agent works: let it finish.
+    if (same && this.busy) return;
     this.sync();
   }
 
@@ -86,26 +118,39 @@ class GuideStore {
       this.stale = false;
       return;
     }
-    if (s.kind === "pruned") {
-      // Show the guide without the removed changes now; the agent then
-      // refreshes the explanations of the groups that lost some.
-      this.#cancelRunning();
-      this.#set(s.guide);
-      this.stale = s.job !== null && !agent;
-      if (s.job && agent) this.#start(s.job, agent);
+    if (s.kind === "discard") {
+      this.discard();
+      this.discarded = true;
+      return;
+    }
+    // Show the guide without the changes that are gone right away; the agent
+    // then places the new changes and refreshes what needs it.
+    if (s.guide !== g) this.#set(s.guide);
+    if (!s.job) {
+      this.stale = false;
       return;
     }
     if (!agent) {
+      this.#cancelRunning();
       this.stale = true;
       return;
     }
     this.#start(s.job, agent);
   }
 
+  /** Writes the guide again from scratch, replacing any update in progress. */
   generate() {
     const agent = this.connected;
     if (!agent || this.items.length === 0) return;
+    this.discarded = false;
     this.#start(fullJob(this.items, agent), agent);
+  }
+
+  /** Runs the job that failed again. */
+  retry() {
+    const agent = this.connected;
+    if (this.#failed && agent) this.#start(this.#failed, agent);
+    else this.sync();
   }
 
   cancel() {
@@ -119,6 +164,7 @@ class GuideStore {
     this.cancel();
     this.error = null;
     this.stale = false;
+    this.discarded = false;
     this.#set(null);
   }
 
@@ -132,6 +178,7 @@ class GuideStore {
     this.busy = job.kind === "full" ? "generating" : "updating";
     this.startedAt = Date.now();
     this.error = null;
+    this.#failed = null;
     try {
       const answer = await aiRun(agent, this.model || null, job.prompt, job.schema);
       if (run !== this.#run) return;
@@ -140,6 +187,7 @@ class GuideStore {
     } catch (e) {
       if (run !== this.#run) return;
       this.error = e instanceof Error ? e.message : String(e);
+      this.#failed = job;
     } finally {
       if (run === this.#run) this.busy = null;
     }

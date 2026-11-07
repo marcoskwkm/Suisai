@@ -83,8 +83,8 @@ describe("syncing", () => {
     const g = guideFor(base);
     const items = changeItems(parsePatch(patch({ "a.ts": [base["a.ts"][0]], "b.ts": base["b.ts"] })));
     const s = syncGuide(g, items, "claude");
-    expect(s.kind).toBe("pruned");
-    if (s.kind !== "pruned") return;
+    expect(s.kind).toBe("update");
+    if (s.kind !== "update") return;
     // "Second" only had a.ts's second hunk, so it is gone; "First" lost nothing.
     expect(s.guide.groups.map((x) => x.title)).toEqual(["First"]);
     expect(s.job).toBeNull();
@@ -95,7 +95,7 @@ describe("syncing", () => {
     // b.ts's change (in "First") is reverted.
     const items = changeItems(parsePatch(patch({ "a.ts": base["a.ts"] })));
     const s = syncGuide(g, items, "claude");
-    if (s.kind !== "pruned" || !s.job) throw new Error("expected a refresh job");
+    if (s.kind !== "update" || !s.job) throw new Error("expected a refresh job");
     expect(s.guide.groups.map((x) => x.keys.length)).toEqual([1, 1]);
     expect(Object.values(s.guide.removed!)).toEqual([[expect.stringContaining("b.ts")]]);
     expect(s.job.prompt).toContain("changes were only removed");
@@ -118,14 +118,14 @@ describe("syncing", () => {
     const g = guideFor(base);
     const items = changeItems(parsePatch(patch({ "a.ts": base["a.ts"] })));
     const s = syncGuide(g, items, "claude");
-    if (s.kind !== "pruned") throw new Error("expected pruned");
+    if (s.kind !== "update") throw new Error("expected an update");
     // The refresh never ran (cancelled, failed or no agent): the next sync asks again.
     const again = syncGuide(s.guide, items, "claude");
-    expect(again.kind === "pruned" && again.job?.prompt).toContain("- b.ts");
+    expect(again.kind === "update" && again.job?.prompt).toContain("- b.ts");
     // A later diff with new changes still mentions the old removal.
     const later = changeItems(parsePatch(patch({ "a.ts": [base["a.ts"][0], [" ctx2", "+added a2", "+more"]] })));
     const next = syncGuide(s.guide, later, "claude");
-    expect(next.kind === "job" && next.job.prompt).toContain("- b.ts");
+    expect(next.kind === "update" && next.job?.prompt).toContain("- b.ts");
   });
 
   it("asks only about new changes", () => {
@@ -133,8 +133,7 @@ describe("syncing", () => {
     const changed = { ...base, "b.ts": [[" x", "-y", "+zz"]] };
     const items = changeItems(parsePatch(patch(changed)));
     const s = syncGuide(g, items, "claude");
-    expect(s.kind).toBe("job");
-    if (s.kind !== "job") return;
+    if (s.kind !== "update" || !s.job) throw new Error("expected an update job");
     expect(s.job.kind).toBe("update");
     expect(s.job.prompt).toContain("### n1 · b.ts");
     expect(s.job.prompt).not.toContain("### n2");
@@ -160,7 +159,7 @@ describe("syncing", () => {
     const g = guideFor(base);
     const changed = { ...base, "b.ts": [[" x", "-y", "+zz"]] };
     const s = syncGuide(g, changeItems(parsePatch(patch(changed))), "claude");
-    if (s.kind !== "job") throw new Error("expected a job");
+    if (s.kind !== "update" || !s.job) throw new Error("expected a job");
     const updated = s.job.apply({ title: "", overview: "", groups: [] });
     expect(updated.groups.map((x) => x.title)).toEqual(["First", "Second", "Other changes"]);
   });
@@ -169,7 +168,32 @@ describe("syncing", () => {
     const g = guideFor(base);
     const items = changeItems(parsePatch(patch({ "c.ts": [["+1", "+2", "+3", "+4", "+5", "+6", "+7", "+8"]], "b.ts": base["b.ts"] })));
     const s = syncGuide(g, items, "claude");
-    expect(s.kind === "job" && s.job.kind).toBe("full");
+    expect(s.kind === "update" && s.job?.kind).toBe("full");
+  });
+
+  it("discards a guide none of whose changes are in the diff", () => {
+    const g = guideFor(base);
+    const items = changeItems(parsePatch(patch({ "other.ts": [["+new"]] })));
+    expect(syncGuide(g, items, "claude").kind).toBe("discard");
+    expect(syncGuide(g, [], "claude").kind).toBe("discard");
+  });
+
+  it("shows the guide without what is gone while the agent works", () => {
+    const g = guideFor(base);
+    // a.ts's second hunk ("Second") is rewritten: until the agent answers, the
+    // guide has no empty "Second" step and the new hunk is not in any step.
+    const changed = { ...base, "a.ts": [base["a.ts"][0], [" ctx2", "+rewritten a2"]] };
+    const items = changeItems(parsePatch(patch(changed)));
+    const s = syncGuide(g, items, "claude");
+    if (s.kind !== "update" || !s.job) throw new Error("expected an update job");
+    expect(s.guide.groups.map((x) => x.title)).toEqual(["First"]);
+    expect(s.guide.groups.flatMap((x) => x.keys)).not.toContain(items[1].key);
+  });
+
+  it("keeps the saved guide object when nothing changed", () => {
+    const g = guideFor(base);
+    const items = changeItems(parsePatch(patch(base)));
+    expect(syncGuide(g, items, "claude")).toEqual({ kind: "current" });
   });
 });
 

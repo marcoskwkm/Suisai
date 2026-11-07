@@ -54,6 +54,12 @@
     return new Date(t).toLocaleDateString();
   }
 
+  /** Writes the guide again, or asks to connect an agent first. */
+  function regenerate() {
+    if (gs.connected) gs.generate();
+    else onsettings();
+  }
+
   // Keep the selected step visible.
   $effect(() => {
     void selected;
@@ -80,6 +86,9 @@
       {:else}
         <h3>Review guide</h3>
         <p>An AI agent groups the changes by purpose and explains each group, in an order that tells the story of the diff.</p>
+        {#if gs.discarded}
+          <p class="note">The saved guide was written for changes that are no longer in the diff, so it was discarded.</p>
+        {/if}
         {#if gs.error}<p class="error">{gs.error}</p>{/if}
         {#if gs.agents === null}
           <p class="muted">Looking for AI agents…</p>
@@ -95,7 +104,21 @@
     </div>
   {:else}
     <div class="summary">
-      {#if guide.title}<div class="title">{guide.title}</div>{/if}
+      <div class="summary-head">
+        <div class="title">{guide.title || "Review guide"}</div>
+        <button
+          class="regen"
+          onclick={regenerate}
+          disabled={gs.busy === "generating"}
+          title={agentName ? "Write the guide again from scratch" : "Connect an AI agent to regenerate the guide"}
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
+            <path d="M13.5 2v3.5H10" stroke-linejoin="round" />
+          </svg>
+          Regenerate
+        </button>
+      </div>
       <!-- Escaped by renderMarkdown. -->
       {#if guide.overview}<div class="overview">{@html renderMarkdown(guide.overview)}</div>{/if}
     </div>
@@ -160,7 +183,7 @@
       {:else if gs.error}
         <div class="status error-line">
           <span class="grow" title={gs.error}>Update failed: {gs.error}</span>
-          <button class="link" onclick={() => gs.sync()}>Retry</button>
+          <button class="link" onclick={() => gs.retry()}>Retry</button>
         </div>
       {:else if gs.stale || unplaced > 0}
         <div class="status warn">
@@ -182,9 +205,10 @@
         By {AGENT_NAMES[guide.agent]} · updated {ago(guide.updatedAt)}
       </div>
       <div class="actions">
-        <button class="link" onclick={() => gs.generate()} disabled={!agentName || gs.busy !== null} title="Write the guide again from scratch">
+        <button class="link" onclick={regenerate} disabled={gs.busy === "generating"} title="Write the guide again from scratch">
           Regenerate
         </button>
+        <button class="link" onclick={() => gs.discard()} title="Delete this guide">Discard</button>
         <button class="link" onclick={onsettings} title="AI agent settings">Settings</button>
       </div>
     </footer>
@@ -282,10 +306,45 @@
     padding: 4px 12px 10px;
     border-bottom: 1px solid var(--border-muted);
   }
+  .summary-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
   .summary .title {
+    flex: 1;
+    min-width: 0;
     font-weight: 600;
     font-size: 13px;
-    margin-bottom: 4px;
+    line-height: 1.35;
+  }
+  .regen {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    font-size: 11.5px;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .regen:hover:not(:disabled) {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+  .regen:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .intro .note {
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--bg-inset);
   }
   .overview {
     font-size: 12px;
