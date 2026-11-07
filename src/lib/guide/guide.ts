@@ -48,7 +48,12 @@ const REGENERATE_ABOVE = 0.6;
 
 // ---- prompts ----
 
-const GUIDELINES = `How to group and order:
+/**
+ * How to group, order and write, as the user can customize it in the agent
+ * settings. The rest of the prompt (change ids, the answer's format, how to
+ * update a guide) is fixed, because Suisai depends on it.
+ */
+export const DEFAULT_INSTRUCTIONS = `How to group and order:
 - Group changes by purpose (one feature, refactor, fix or concern per group), not by file. One file's changes can be split across groups.
 - Order the groups so that reading them in sequence explains the whole change: put foundations first (types, data models, schemas, config, core logic) and the code that uses them after. Put tests right after the code they test, unless they are a group of their own. Put incidental changes (formatting, renames, generated files, lockfiles) last.
 - Typical diffs need 2 to 8 groups. A group can hold a single change. Avoid a vague "miscellaneous" group when a better home exists.
@@ -56,8 +61,14 @@ const GUIDELINES = `How to group and order:
 How to write:
 - title: a short phrase (at most 8 words) naming what the group does, e.g. "Parse hunks into change items".
 - explanation: Markdown, 1 to 3 short paragraphs or a bullet list. Explain the purpose and intention of the changes, how they connect to the earlier groups, and anything a reviewer should check (edge cases, risks, behavior changes). Do not restate the code line by line. Refer to identifiers and files in \`backticks\`.
+- The guide's title: at most 8 words. Its overview: 1 to 3 sentences on what the whole change does.`;
+
+/** The instructions to use, followed by the fixed rules every prompt needs. */
+function guidelines(custom: string | null | undefined): string {
+  return `${custom?.trim() || DEFAULT_INSTRUCTIONS}
 
 The repository is in the current directory. You may read a few files for context when the diff alone is unclear, but keep it brief and do not modify anything. Answer only with JSON matching the schema.`;
+}
 
 const str = { type: "string" } as const;
 const strArray = { type: "array", items: str } as const;
@@ -111,7 +122,7 @@ function labelsFor(items: ChangeItem[]): Record<string, string> {
 }
 
 /** A job that writes a guide from scratch. */
-export function fullJob(items: ChangeItem[], agent: AgentKind): AgentJob {
+export function fullJob(items: ChangeItem[], agent: AgentKind, instructions?: string | null): AgentJob {
   const ids = new Map<string, string>();
   const entries = items.map((it, i): [string, ChangeItem] => {
     ids.set(`c${i + 1}`, it.key);
@@ -119,11 +130,9 @@ export function fullJob(items: ChangeItem[], agent: AgentKind): AgentJob {
   });
   const prompt = `You are helping a developer review a code change. Write a review guide for the diff below: split its changes into groups and explain each group, so that reading the groups in order explains the whole change.
 
-Each change is a hunk (or a whole file) with an id like c1. Put every change in exactly one group.
+Each change is a hunk (or a whole file) with an id like c1. Put every change in exactly one group. Also give the guide a title and an overview.
 
-${GUIDELINES}
-
-Also give the guide a title (at most 8 words) and an overview (1 to 3 sentences on what the whole change does).
+${guidelines(instructions)}
 
 # Changes
 
@@ -185,7 +194,7 @@ export type Sync =
  * their group; the agent is only asked about new or changed ones, and about
  * the groups that lost changes.
  */
-export function syncGuide(guide: Guide, items: ChangeItem[], agent: AgentKind): Sync {
+export function syncGuide(guide: Guide, items: ChangeItem[], agent: AgentKind, instructions?: string | null): Sync {
   const byKey = new Map(items.map((it) => [it.key, it]));
   const known = new Set(guide.groups.flatMap((g) => g.keys));
   const fresh = items.filter((it) => !known.has(it.key));
@@ -216,7 +225,10 @@ export function syncGuide(guide: Guide, items: ChangeItem[], agent: AgentKind): 
 
   const total = items.reduce((n, it) => n + itemSize(it), 0);
   const added = fresh.reduce((n, it) => n + itemSize(it), 0);
-  const job = added > REGENERATE_ABOVE * total ? fullJob(items, agent) : updateJob(pruned, remaining, lost, fresh, items, agent);
+  const job =
+    added > REGENERATE_ABOVE * total
+      ? fullJob(items, agent, instructions)
+      : updateJob(pruned, remaining, lost, fresh, items, agent, instructions);
   return { kind: "update", guide: pruned, job };
 }
 
@@ -228,6 +240,7 @@ function updateJob(
   fresh: ChangeItem[],
   items: ChangeItem[],
   agent: AgentKind,
+  instructions: string | null | undefined,
 ): AgentJob {
   const byKey = new Map(items.map((it) => [it.key, it]));
   // Short ids in the prompt: g1… for groups, n1… for new changes.
@@ -259,7 +272,7 @@ None: changes were only removed. Update the explanations of the groups that lost
 
   const prompt = `You are helping a developer review a code change. Earlier, you wrote a review guide for this diff, grouping its changes and explaining each group. The diff has changed since then. Update the guide to match it, changing as little as needed.
 
-${GUIDELINES}
+${guidelines(instructions)}
 
 # Current guide
 

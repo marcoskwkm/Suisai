@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parsePatch } from "../git/parse";
-import { fullJob, groupFiles, groupSections, groupStats, matchHunks, syncGuide, type Guide } from "./guide";
+import { DEFAULT_INSTRUCTIONS, fullJob, groupFiles, groupSections, groupStats, matchHunks, syncGuide, type Guide } from "./guide";
 import { changeItems } from "./items";
 import { renderMarkdown } from "./markdown";
 
@@ -70,6 +70,36 @@ describe("full guides", () => {
   it("rejects answers without groups", () => {
     const items = changeItems(parsePatch(patch(base)));
     expect(() => fullJob(items, "claude").apply({ groups: [] })).toThrow();
+  });
+});
+
+describe("custom instructions", () => {
+  const custom = "Group by layer: backend first, then frontend. Write in French.";
+
+  it("replace the default ones in a new guide's prompt", () => {
+    const items = changeItems(parsePatch(patch(base)));
+    expect(fullJob(items, "claude").prompt).toContain(DEFAULT_INSTRUCTIONS);
+    const prompt = fullJob(items, "claude", custom).prompt;
+    expect(prompt).toContain(custom);
+    expect(prompt).not.toContain("How to group and order");
+    // What Suisai depends on stays.
+    expect(prompt).toContain("Put every change in exactly one group");
+    expect(prompt).toContain("Answer only with JSON matching the schema");
+    expect(prompt).toContain("### c1 · a.ts");
+  });
+
+  it("are used when updating a guide", () => {
+    const g = guideFor(base);
+    const changed = { ...base, "b.ts": [[" x", "-y", "+zz"]] };
+    const s = syncGuide(g, changeItems(parsePatch(patch(changed))), "claude", custom);
+    if (s.kind !== "update" || !s.job) throw new Error("expected an update job");
+    expect(s.job.prompt).toContain(custom);
+    expect(s.job.prompt).toContain("# How to answer");
+  });
+
+  it("fall back to the default when blank", () => {
+    const items = changeItems(parsePatch(patch(base)));
+    expect(fullJob(items, "claude", "   ").prompt).toContain(DEFAULT_INSTRUCTIONS);
   });
 });
 

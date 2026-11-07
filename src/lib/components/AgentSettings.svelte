@@ -1,31 +1,71 @@
 <script lang="ts">
-  import type { AgentKind } from "../guide/guide";
+  import { DEFAULT_INSTRUCTIONS, type AgentKind } from "../guide/guide";
   import { AGENT_NAMES, guideStore as gs } from "../guide/store.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
-  // svelte-ignore state_referenced_locally
-  let choice = $state<AgentKind | null>(gs.agent);
-  // svelte-ignore state_referenced_locally
-  let model = $state(gs.model);
+  interface ModelOption {
+    /** Passed to the CLI's --model. */
+    value: string;
+    label: string;
+  }
 
-  const INFO: Record<AgentKind, { what: string; install: string; models: string }> = {
+  const INFO: Record<AgentKind, { what: string; install: string; models: ModelOption[]; customHint: string }> = {
     claude: {
       what: "Uses your Claude Code login (Claude subscription or API key).",
       install: "curl -fsSL https://claude.ai/install.sh | bash",
-      models: "e.g. opus, sonnet, haiku",
+      // Aliases: Claude Code maps each to the latest version of that model.
+      models: [
+        { value: "opus", label: "Opus · most capable" },
+        { value: "sonnet", label: "Sonnet · balanced" },
+        { value: "haiku", label: "Haiku · fastest" },
+        { value: "fable", label: "Fable · may need usage credits" },
+      ],
+      customHint: "A full model name, e.g. claude-sonnet-5-5",
     },
     codex: {
       what: "OpenAI's coding agent. Sign in with your ChatGPT account by running codex login.",
       install: "npm install -g @openai/codex",
-      models: "e.g. gpt-5-codex",
+      models: [],
+      customHint: "A model name Codex accepts with --model",
     },
   };
+
+  /** Menu value for "Custom…" (no CLI model is called this). */
+  const CUSTOM = "__custom__";
+
+  // svelte-ignore state_referenced_locally
+  let choice = $state<AgentKind | null>(gs.agent);
+  // The model menu and the custom name, for the agent the dialog opened with.
+  // svelte-ignore state_referenced_locally
+  const startModel = gs.model;
+  const isPreset = (agent: AgentKind | null, m: string) => m === "" || (agent !== null && INFO[agent].models.some((o) => o.value === m));
+  // svelte-ignore state_referenced_locally
+  let modelChoice = $state(isPreset(gs.agent, startModel) ? startModel : CUSTOM);
+  // svelte-ignore state_referenced_locally
+  let customModel = $state(isPreset(gs.agent, startModel) ? "" : startModel);
+
+  // A model picked for one agent means nothing to the other.
+  // svelte-ignore state_referenced_locally
+  let lastChoice = choice;
+  $effect(() => {
+    if (choice === lastChoice) return;
+    lastChoice = choice;
+    modelChoice = "";
+    customModel = "";
+  });
+
+  // svelte-ignore state_referenced_locally
+  let instructions = $state(gs.instructions ?? DEFAULT_INSTRUCTIONS);
+  const isDefaultPrompt = $derived(instructions.trim() === DEFAULT_INSTRUCTIONS.trim());
+  // svelte-ignore state_referenced_locally
+  let promptOpen = $state(gs.instructions !== null);
 
   const pathOf = (k: AgentKind) => gs.agents?.find((a) => a.kind === k)?.path ?? null;
 
   function save() {
-    gs.connect(choice, model);
+    const model = modelChoice === CUSTOM ? customModel.trim() : modelChoice;
+    gs.connect(choice, model, instructions.trim() ? instructions : null);
     onclose();
   }
 
@@ -75,15 +115,44 @@
     </div>
 
     {#if choice}
-      <label class="model">
-        <span>Model <span class="optional">(optional)</span></span>
-        <input bind:value={model} placeholder="Default: {INFO[choice].models}" spellcheck="false" autocomplete="off" />
-      </label>
+      <div class="field">
+        <label for="model-select">Model</label>
+        <select id="model-select" bind:value={modelChoice}>
+          <option value="">Default · {AGENT_NAMES[choice]}'s own setting</option>
+          {#each INFO[choice].models as m (m.value)}
+            <option value={m.value}>{m.label}</option>
+          {/each}
+          <option value={CUSTOM}>Custom…</option>
+        </select>
+        {#if modelChoice === CUSTOM}
+          <input bind:value={customModel} placeholder={INFO[choice].customHint} spellcheck="false" autocomplete="off" />
+        {/if}
+      </div>
+
+      <div class="field">
+        <button class="disclosure" onclick={() => (promptOpen = !promptOpen)} aria-expanded={promptOpen}>
+          <svg class:open={promptOpen} width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M4.5 3 7.5 6 4.5 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Prompt
+          <span class="tag">{isDefaultPrompt ? "default" : "customized"}</span>
+        </button>
+        {#if promptOpen}
+          <p class="hint">
+            How the agent groups, orders and explains the changes. Suisai adds the diff, the ids of the changes and the format of the answer
+            itself. Changes apply to new guides and updates; use Regenerate to rewrite an existing guide with them.
+          </p>
+          <textarea bind:value={instructions} rows="14" spellcheck="false"></textarea>
+          <div class="prompt-actions">
+            <button class="link" onclick={() => (instructions = DEFAULT_INSTRUCTIONS)} disabled={isDefaultPrompt}>Reset to default</button>
+          </div>
+        {/if}
+      </div>
     {/if}
 
     <div class="buttons">
       <button class="secondary" onclick={onclose}>Cancel</button>
-      <button class="primary" onclick={save}>Save</button>
+      <button class="primary" onclick={save} disabled={choice !== null && modelChoice === CUSTOM && !customModel.trim()}>Save</button>
     </div>
   </div>
 </div>
@@ -99,7 +168,9 @@
     z-index: 10;
   }
   .dialog {
-    width: min(520px, calc(100vw - 32px));
+    width: min(600px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -169,19 +240,19 @@
     user-select: text;
     -webkit-user-select: text;
   }
-  .model {
+  .field {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     margin-top: 14px;
     font-size: 12.5px;
+  }
+  .field > label {
     font-weight: 500;
   }
-  .optional {
-    color: var(--fg-muted);
-    font-weight: 400;
-  }
-  .model input {
+  select,
+  .field input,
+  textarea {
     padding: 5px 9px;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -190,8 +261,73 @@
     font-size: 13px;
     outline: none;
   }
-  .model input:focus {
+  select:focus,
+  .field input:focus,
+  textarea:focus {
     border-color: var(--accent);
+  }
+  textarea {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 120px;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .disclosure {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--fg);
+    cursor: pointer;
+    align-self: flex-start;
+  }
+  .disclosure svg {
+    color: var(--fg-muted);
+    transition: transform 0.12s ease;
+  }
+  .disclosure svg.open {
+    transform: rotate(90deg);
+  }
+  .tag {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--fg-muted);
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+  }
+  .hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg-muted);
+  }
+  .prompt-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .link {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 12px;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .link:disabled {
+    color: var(--fg-subtle);
+    cursor: default;
+  }
+  .primary:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   .buttons {
     display: flex;

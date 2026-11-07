@@ -2,7 +2,7 @@
 // current diff, and the agent job that is running.
 
 import { aiAgents, aiCancel, aiRun, guideLoad, guideSave, settingsLoad, settingsSave, type AgentInfo } from "../git/api";
-import { fullJob, parseGuide, syncGuide, type AgentJob, type AgentKind, type Guide } from "./guide";
+import { DEFAULT_INSTRUCTIONS, fullJob, parseGuide, syncGuide, type AgentJob, type AgentKind, type Guide } from "./guide";
 import type { ChangeItem } from "./items";
 
 export const AGENT_NAMES: Record<AgentKind, string> = { claude: "Claude Code", codex: "Codex" };
@@ -10,6 +10,8 @@ export const AGENT_NAMES: Record<AgentKind, string> = { claude: "Claude Code", c
 interface Settings {
   agent: AgentKind | null;
   model: string;
+  /** Custom grouping and writing instructions for the prompt; null uses the default. */
+  instructions: string | null;
 }
 
 /** Settings from before they were saved on disk, when they lived in the window's storage. */
@@ -17,7 +19,7 @@ function legacySettings(): Settings | null {
   try {
     const agent = localStorage.getItem("aiAgent");
     if (agent === null) return null;
-    return { agent: JSON.parse(agent), model: JSON.parse(localStorage.getItem("aiModel") ?? '""') };
+    return { agent: JSON.parse(agent), model: JSON.parse(localStorage.getItem("aiModel") ?? '""'), instructions: null };
   } catch {
     return null;
   }
@@ -28,7 +30,11 @@ function parseSettings(text: string | null): Settings | null {
   try {
     const s = JSON.parse(text) as Partial<Settings>;
     const agent = s.agent === "claude" || s.agent === "codex" ? s.agent : null;
-    return { agent, model: typeof s.model === "string" ? s.model : "" };
+    return {
+      agent,
+      model: typeof s.model === "string" ? s.model : "",
+      instructions: typeof s.instructions === "string" && s.instructions.trim() ? s.instructions : null,
+    };
   } catch {
     return null;
   }
@@ -41,6 +47,8 @@ class GuideStore {
   agent = $state<AgentKind | null>(null);
   /** Model to ask for; empty uses the CLI's default. */
   model = $state<string>("");
+  /** Custom prompt instructions; null uses DEFAULT_INSTRUCTIONS. */
+  instructions = $state<string | null>(null);
 
   guide = $state.raw<Guide | null>(null);
   items = $state.raw<ChangeItem[]>([]);
@@ -83,14 +91,19 @@ class GuideStore {
       if (settings) {
         this.agent = settings.agent;
         this.model = settings.model;
+        this.instructions = settings.instructions;
       }
     })());
   }
 
-  connect(agent: AgentKind | null, model = this.model) {
+  /** Saves the agent settings. Empty or default instructions are stored as null. */
+  connect(agent: AgentKind | null, model = this.model, instructions = this.instructions) {
     this.agent = agent;
     this.model = model.trim();
-    settingsSave(JSON.stringify({ agent, model: this.model } satisfies Settings)).catch((e) =>
+    const custom = instructions?.trim();
+    this.instructions = custom && custom !== DEFAULT_INSTRUCTIONS.trim() ? instructions : null;
+    const settings: Settings = { agent, model: this.model, instructions: this.instructions };
+    settingsSave(JSON.stringify(settings)).catch((e) =>
       console.error("could not save the settings", e),
     );
     // An out-of-date guide can be updated now.
@@ -113,7 +126,7 @@ class GuideStore {
     const g = this.guide;
     if (!g) return;
     const agent = this.connected;
-    const s = syncGuide(g, this.items, agent ?? g.agent);
+    const s = syncGuide(g, this.items, agent ?? g.agent, this.instructions);
     if (s.kind === "current") {
       this.stale = false;
       return;
@@ -143,7 +156,7 @@ class GuideStore {
     const agent = this.connected;
     if (!agent || this.items.length === 0) return;
     this.discarded = false;
-    this.#start(fullJob(this.items, agent), agent);
+    this.#start(fullJob(this.items, agent, this.instructions), agent);
   }
 
   /** Runs the job that failed again. */
