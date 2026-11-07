@@ -37,10 +37,12 @@
 
   let view = $state<ViewMode>(pref("view", "split"));
   let ignoreWhitespace = $state<boolean>(pref("ignoreWhitespace", false));
+  let wrap = $state<boolean>(pref("wrap", false));
   let sidebarWidth = $state<number>(pref("sidebarWidth", 280));
   let sidebarVisible = $state<boolean>(pref("sidebarVisible", true));
   $effect(() => savePref("view", view));
   $effect(() => savePref("ignoreWhitespace", ignoreWhitespace));
+  $effect(() => savePref("wrap", wrap));
   $effect(() => savePref("sidebarWidth", sidebarWidth));
   $effect(() => savePref("sidebarVisible", sidebarVisible));
   let mode = $state<"files" | "guide">(pref("sidebarMode", "files"));
@@ -249,6 +251,7 @@
       },
       s: () => (view = view === "split" ? "unified" : "split"),
       w: toggleWhitespace,
+      z: () => (wrap = !wrap),
       b: () => (sidebarVisible = !sidebarVisible),
       t: cycleTheme,
       o: () => {
@@ -400,12 +403,16 @@
                 <path d="M12.5 9.5c.15 1.4.8 2.05 2 2.25-1.2.2-1.85.85-2 2.25-.15-1.4-.8-2.05-2-2.25 1.2-.2 1.85-.85 2-2.25Z" opacity=".7" />
               </svg>
             {/if}
-            {#if gs.busy === "generating"}Generating…{:else if guide || !gs.connected}Guide{:else}Generate guide{/if}
+            <span class="long">{#if gs.busy === "generating"}Generating…{:else if guide || !gs.connected}Guide{:else}Generate guide{/if}</span>
           </button>
         {/if}
+        <label class="toggle" title="Wrap long lines (z)">
+          <input type="checkbox" bind:checked={wrap} />
+          <span class="long">Wrap lines</span><span class="short">Wrap</span>
+        </label>
         <label class="toggle" title="Hide whitespace changes (w)">
           <input type="checkbox" checked={ignoreWhitespace} onchange={toggleWhitespace} />
-          Hide whitespace
+          <span class="long">Hide whitespace</span><span class="short">Hide ws</span>
         </label>
         <div class="segmented" role="group" aria-label="Diff layout">
           <button class:active={view === "split"} onclick={() => (view = "split")} title="Side by side (s)">Split</button>
@@ -455,12 +462,13 @@
           byKey={gs.byKey}
           {shownFiles}
           {view}
+          {wrap}
           onselect={selectStep}
           onopen={openFile}
           onshowfile={showFile}
         />
       {:else if selected}
-        <FileView bind:this={fileView} file={selected} {view} onopenline={canOpen ? openSelected : undefined} />
+        <FileView bind:this={fileView} file={selected} {view} {wrap} onopenline={canOpen ? openSelected : undefined} />
       {/if}
     </div>
   </main>
@@ -519,6 +527,7 @@
     background: var(--accent);
   }
   main {
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -555,6 +564,7 @@
     background: var(--bg-hover);
   }
   .file-info {
+    overflow: hidden;
     flex: 1;
     display: flex;
     align-items: center;
@@ -642,6 +652,29 @@
     border-radius: 999px;
     color: var(--accent);
     border: 1px solid currentColor;
+  }
+  .short {
+    display: none;
+  }
+  /* Narrow windows (or a wide sidebar): keep the controls on one line. */
+  @container (max-width: 960px) {
+    .position {
+      display: none;
+    }
+    .controls {
+      gap: 8px;
+    }
+    .toggle .long {
+      display: none;
+    }
+    .toggle .short {
+      display: inline;
+    }
+  }
+  @container (max-width: 720px) {
+    .guide-button .long {
+      display: none;
+    }
   }
   .guide-step {
     font-family: var(--font-ui);

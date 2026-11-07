@@ -29,6 +29,7 @@
       [
         [["s"], "Split / unified"],
         [["w"], "Hide whitespace"],
+        [["z"], "Wrap long lines"],
         [["t"], "Theme: system / light / dark"],
         [["r"], "Reload"],
         [["q"], "Close window"],

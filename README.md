@@ -13,6 +13,7 @@ A GitHub-style diff viewer for macOS that works with `git diff` and `git difftoo
 - Syntax highlighting for 200+ languages ([Shiki](https://shiki.style), same grammars as VS Code)
 - Word-level highlights inside changed lines
 - Hide whitespace changes (like GitHub's `?w=1`)
+- Wrap long lines
 - Expand the unchanged lines between hunks
 - Before/after previews for images
 - Keyboard-driven (press <kbd>?</kbd> in the app)
@@ -85,6 +86,7 @@ In the guide, <kbd>Tab</kbd> / <kbd>[</kbd> <kbd>]</kbd> move between steps, and
 | <kbd>g</kbd> / <kbd>G</kbd> | Top / bottom |
 | <kbd>s</kbd> | Toggle split / unified |
 | <kbd>w</kbd> | Toggle hide whitespace |
+| <kbd>z</kbd> | Toggle line wrapping |
 | <kbd>b</kbd> | Toggle sidebar |
 | <kbd>t</kbd> | Cycle theme (system / light / dark) |
 | <kbd>/</kbd> | Filter files |

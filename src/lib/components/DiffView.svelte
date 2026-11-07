@@ -8,6 +8,7 @@
   import type { Ranges } from "../diff/intraline";
   import { changeStarts, type Cell, type LineKey, type Row } from "../diff/rows";
   import { segments, type Segment } from "../diff/segments";
+  import { wrappedLines } from "../diff/wrap";
   import type { LineType, Side, Token, ViewMode } from "../types";
 
   interface Props {
@@ -29,11 +30,27 @@
      * (with other content around it). Only the rows in its viewport are drawn.
      */
     outer?: HTMLElement | null;
+    /** Wrap long lines instead of scrolling horizontally. */
+    wrap?: boolean;
   }
 
-  let { rows, view, resetKey, text, tokens, intraline, maxChars, numberDigits, onexpand, onopenline, outer = null }: Props = $props();
+  let {
+    rows,
+    view,
+    resetKey,
+    text,
+    tokens,
+    intraline,
+    maxChars,
+    numberDigits,
+    onexpand,
+    onopenline,
+    outer = null,
+    wrap = false,
+  }: Props = $props();
 
   let scroller: HTMLDivElement;
+  let sizer: HTMLDivElement;
   let scrollTop = $state(0);
   let height = $state(0);
   /** Horizontal offsets: split uses old/new, unified uses new for its single pane. */
@@ -41,12 +58,68 @@
   let hbars: Record<Side, HTMLDivElement | undefined> = $state({ old: undefined, new: undefined });
   let selectSide = $state<Side | null>(null);
 
-  const rowHeight = (r: Row) => (r.kind === "expander" ? EXPANDER_H : LINE_H);
+  // ---- row heights ----
+  // Without wrapping, every line is LINE_H tall. With wrapping, heights are
+  // estimated from the text and the width of a code column, then corrected
+  // by measuring the rows that are drawn.
+
+  /** Width of a code column, and of one character, in pixels (wrap mode). */
+  let clipWidth = $state(0);
+  let charWidth = $state(0);
+  let charProbe: HTMLSpanElement | undefined = $state();
+  $effect(() => {
+    void numberDigits;
+    if (charProbe) charWidth = charProbe.getBoundingClientRect().width / charProbe.textContent!.length;
+  });
+  const cols = $derived(wrap && charWidth > 0 ? Math.floor(clipWidth / charWidth) : 0);
+
+  const estimates = $derived.by(() => {
+    const h = new Float64Array(rows.length);
+    const lines = (side: Side, no: number) => wrappedLines(text(side, no), cols);
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (r.kind === "expander") h[i] = EXPANDER_H;
+      else if (!cols) h[i] = LINE_H;
+      else if (r.kind === "pair")
+        h[i] = LINE_H * Math.max(r.left ? lines("old", r.left.no) : 1, r.right ? lines("new", r.right.no) : 1);
+      else h[i] = LINE_H * lines(r.type === "del" ? "old" : "new", (r.type === "del" ? r.oldNo : r.newNo)!);
+    }
+    return h;
+  });
+
+  /** Measured heights by row index, valid for one set of rows at one width. */
+  let measured = $state.raw<{ rows: Row[]; cols: number; map: Map<number, number> } | null>(null);
+  const measuredMap = $derived(cols && measured?.rows === rows && measured.cols === cols ? measured.map : null);
 
   const offsets = $derived.by(() => {
     const o = new Float64Array(rows.length + 1);
-    for (let i = 0; i < rows.length; i++) o[i + 1] = o[i] + rowHeight(rows[i]);
+    const m = measuredMap;
+    for (let i = 0; i < rows.length; i++) o[i + 1] = o[i] + (m?.get(i) ?? estimates[i]);
     return o;
+  });
+
+  // Correct estimates with the heights of the rows on screen, keeping the
+  // content under the top edge still.
+  $effect(() => {
+    void visible;
+    void offsets;
+    if (!cols) return;
+    const changes: [number, number][] = [];
+    for (const el of sizer.querySelectorAll<HTMLElement>(":scope > .row[data-i]")) {
+      const i = Number(el.dataset.i);
+      const h = el.offsetHeight;
+      if (i < rows.length && Math.abs(h - (offsets[i + 1] - offsets[i])) > 0.5) changes.push([i, h]);
+    }
+    if (changes.length === 0) return;
+    const top = rowAt(outer ? inlineTop : scroller.scrollTop);
+    let shift = 0;
+    const map = new Map(measuredMap ?? []);
+    for (const [i, h] of changes) {
+      if (i < top) shift += h - (offsets[i + 1] - offsets[i]);
+      map.set(i, h);
+    }
+    measured = { rows, cols, map };
+    if (shift) (outer ?? scroller).scrollTop += shift;
   });
   const total = $derived(offsets[rows.length]);
   const starts = $derived(changeStarts(rows));
@@ -173,7 +246,7 @@
   $effect(() => {
     const el = scroller;
     const onwheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      if (wrap || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       const side = paneSide(e);
       const bar = hbars[side];
       if (!bar) return;
@@ -309,7 +382,7 @@
     <div class="code {cell.type}" data-side={side}>
       <span class="sign">{sign(cell.type)}</span>
       <div class="clip">
-        <div class="text" style:transform="translateX({-(view === 'unified' ? scrollLeft.new : scrollLeft[side])}px)">
+        <div class="text" style:transform={wrap ? undefined : `translateX(${-(view === "unified" ? scrollLeft.new : scrollLeft[side])}px)`}>
           {#each segs(side, cell.no) as s}<span
               class="tok"
               class:hl={s.hl}
@@ -337,7 +410,14 @@
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="diff" class:split={view === "split"} class:unified={view === "unified"} class:inline={outer !== null} style:--digits={numberDigits}>
+<div
+  class="diff"
+  class:split={view === "split"}
+  class:unified={view === "unified"}
+  class:inline={outer !== null}
+  class:wrap
+  style:--digits={numberDigits}
+>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="scroller"
@@ -349,11 +429,23 @@
     {onpointerdown}
     tabindex="-1"
   >
-    <div class="sizer" style:height="{total}px">
+    <div class="sizer" style:height="{total}px" bind:this={sizer}>
+      {#if wrap}
+        <!-- Measures the width of a code column and of a character. -->
+        <div class="row line probe" aria-hidden="true">
+          <div class="num"></div>
+          {#if view === "unified"}<div class="num"></div>{/if}
+          <div class="code">
+            <span class="sign"></span>
+            <div class="clip" bind:clientWidth={clipWidth}><span class="char-probe" bind:this={charProbe}>{"0".repeat(50)}</span></div>
+          </div>
+          {#if view === "split"}<div class="num"></div><div class="code"></div>{/if}
+        </div>
+      {/if}
       {#each visible as row, i (range.start + i)}
         {@const top = offsets[range.start + i]}
         {#if row.kind === "expander"}
-          <div class="row expander" style:transform="translateY({top}px)" style:height="{EXPANDER_H}px">
+          <div class="row expander" data-i={range.start + i} style:transform="translateY({top}px)" style:height="{EXPANDER_H}px">
             <div class="expand-buttons">
               {#if row.remaining > 0 && row.remaining <= 20}
                 <button title="Expand all" onclick={() => onexpand(row.gap, "all")}>⇕</button>
@@ -365,7 +457,7 @@
             <div class="hunk-header">{hunkLabel(row.header)}</div>
           </div>
         {:else if row.kind === "pair"}
-          <div class="row line" style:transform="translateY({top}px)">
+          <div class="row line" data-i={range.start + i} style:transform="translateY({top}px)">
             {@render num(row.left)}
             {@render code("old", row.left)}
             {@render num(row.right, "right", "new")}
@@ -374,7 +466,7 @@
         {:else}
           {@const cell = { type: row.type, no: (row.type === "del" ? row.oldNo : row.newNo)! }}
           {@const side = row.type === "del" ? "old" : "new"}
-          <div class="row line" style:transform="translateY({top}px)">
+          <div class="row line" data-i={range.start + i} style:transform="translateY({top}px)">
             {@render num(row.oldNo === null ? null : { type: row.type, no: row.oldNo })}
             {@render num(row.newNo === null ? null : { type: row.type, no: row.newNo }, "", "new")}
             {@render code(side, cell)}
@@ -384,6 +476,7 @@
     </div>
   </div>
 
+  {#if !wrap}
   <div class="hscroll">
     {#if view === "split"}
       <div class="num-spacer"></div>
@@ -410,6 +503,7 @@
       ></div>
     </div>
   </div>
+  {/if}
 </div>
 
 <style>
@@ -598,6 +692,25 @@
     text-overflow: ellipsis;
   }
 
+  .wrap .line {
+    height: auto;
+    min-height: 20px;
+  }
+  .wrap .text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    width: auto;
+    min-width: 0;
+    padding-right: 0;
+  }
+  .probe {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .char-probe {
+    position: absolute;
+    white-space: pre;
+  }
   .hscroll {
     flex: none;
     display: grid;

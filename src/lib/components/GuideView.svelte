@@ -13,6 +13,7 @@
     /** Files as shown (whitespace changes may be hidden), by id. */
     shownFiles: Map<string, FileDiff>;
     view: ViewMode;
+    wrap: boolean;
     onselect: (index: number) => void;
     /** Opens a file in the editor (at a line of the new file). */
     onopen: (file: FileDiff, line?: number) => void;
@@ -20,7 +21,7 @@
     onshowfile: (file: FileDiff) => void;
   }
 
-  let { guide, index, byKey, shownFiles, view, onselect, onopen, onshowfile }: Props = $props();
+  let { guide, index, byKey, shownFiles, view, wrap, onselect, onopen, onshowfile }: Props = $props();
 
   let outer: HTMLDivElement | undefined = $state();
   let fileViews: (FileView | undefined)[] = $state([]);
@@ -117,6 +118,7 @@
               bind:this={fileViews[i]}
               file={f}
               {view}
+              {wrap}
               outer={outer ?? null}
               expandable={false}
               onopenline={f.newPath ? (no) => onopen(f, no) : undefined}

@@ -14,9 +14,11 @@
     outer?: HTMLElement | null;
     /** Whether unchanged lines between hunks can be expanded. */
     expandable?: boolean;
+    /** Wrap long lines. */
+    wrap?: boolean;
   }
 
-  let { file, view, onopenline, outer = null, expandable = true }: Props = $props();
+  let { file, view, onopenline, outer = null, expandable = true, wrap = false }: Props = $props();
 
   let diffView: DiffView | undefined = $state();
   /**
@@ -212,6 +214,7 @@
         {onexpand}
         {onopenline}
         {outer}
+        {wrap}
       />
     {/if}
   </div>
