@@ -50,7 +50,32 @@ case ":$PATH:" in
   *) echo "note: $bin_dir is not on your PATH" ;;
 esac
 
+# Tab completion in fish, which loads it from its completions folder by itself.
+# Both commands take `git diff` arguments, so they reuse git diff's completions.
+if command -v fish >/dev/null 2>&1; then
+  fish_completions=${XDG_CONFIG_HOME:-"$HOME/.config"}/fish/completions
+  mkdir -p "$fish_completions"
+  for cmd in "$name" "$name-dev"; do
+    cat > "$fish_completions/$cmd.fish" <<SCRIPT
+# Installed by $repo_dir/scripts/install-cli.sh
+complete -c $cmd --wraps 'git diff'
+complete -c $cmd -s C -x -a '(__fish_complete_directories)' -d 'Run as if started in <dir>'
+complete -c $cmd -s g -l guide -d 'Open the AI review guide'
+SCRIPT
+    echo "Installed fish completions in $fish_completions/$cmd.fish"
+  done
+fi
+
 cat <<NEXT
+
+For tab completion in zsh or bash, add this to your ~/.zshrc (after compinit):
+
+  compdef _git $name=git-diff $name-dev=git-diff
+
+or to your ~/.bashrc (after git's completion script is loaded):
+
+  __git_complete $name _git_diff
+  __git_complete $name-dev _git_diff
 
 To use it as git's difftool:
 

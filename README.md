@@ -112,6 +112,16 @@ Optionally copy `Suisai.app` to `/Applications` and pass its path to `scripts/in
 
 The command is called `ss` by default. To use another name (for example if you already have Linux's `ss` installed), run `CLI_NAME=suisai scripts/install-cli.sh`.
 
+### Tab completion
+
+`ss` completes the same arguments as `git diff` (branches, commits, flags and paths).
+
+- **fish**: `scripts/install-cli.sh` installs the completions in `~/.config/fish/completions/`. These also complete `ss`'s own `-C` and `--guide`.
+- **zsh**: add `compdef _git ss=git-diff ss-dev=git-diff` to your `~/.zshrc`, after `compinit`.
+- **bash**: add `__git_complete ss _git_diff` and `__git_complete ss-dev _git_diff` to your `~/.bashrc`, after git's completion script is loaded (on macOS, install it with `brew install bash-completion@2`).
+
+If you installed the command under another name, use that name instead of `ss`.
+
 ## Development
 
 ```sh
