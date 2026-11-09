@@ -233,12 +233,15 @@ describe("sections", () => {
     const files = parsePatch(patch(base));
     const byKey = new Map(changeItems(files).map((i) => [i.key, i]));
     const shown = new Map(files.map((f) => [f.id, f]));
-    const first = groupSections(g.groups[0], byKey, shown);
+    const first = groupSections(g, 0, byKey, shown);
     expect(first.map((s) => [s.file.path, s.file.hunks.length])).toEqual([
       ["a.ts", 1],
       ["b.ts", 1],
     ]);
     expect(first[0].file.hunks[0].lines[1].text).toBe("old a1");
+    // a.ts's second hunk is in "Second", shown by expanding.
+    const [h0, h1] = first[0].allHunks!;
+    expect([first[0].groupOf!.get(h0), first[0].groupOf!.get(h1)]).toEqual([0, 1]);
   });
 
   it("lists a group's files with their line counts", () => {

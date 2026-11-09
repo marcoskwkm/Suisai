@@ -4,12 +4,12 @@
 </script>
 
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import type { Ranges } from "../diff/intraline";
   import { changeStarts, type Cell, type LineKey, type Row } from "../diff/rows";
   import { segments, type Segment } from "../diff/segments";
   import { wrappedLines } from "../diff/wrap";
-  import type { LineType, Side, Token, ViewMode } from "../types";
+  import type { Hunk, LineType, Side, Token, ViewMode } from "../types";
 
   interface Props {
     rows: Row[];
@@ -32,6 +32,8 @@
     outer?: HTMLElement | null;
     /** Wrap long lines instead of scrolling horizontally. */
     wrap?: boolean;
+    /** Shown on an expander whose next click reveals hunks that were not shown. */
+    expanderNote?: Snippet<[Hunk[]]>;
   }
 
   let {
@@ -47,6 +49,7 @@
     onopenline,
     outer = null,
     wrap = false,
+    expanderNote,
   }: Props = $props();
 
   let scroller: HTMLDivElement;
@@ -455,6 +458,9 @@
               {/if}
             </div>
             <div class="hunk-header">{hunkLabel(row.header)}</div>
+            {#if expanderNote && row.reveals.length}
+              <div class="expander-note">{@render expanderNote(row.reveals)}</div>
+            {/if}
           </div>
         {:else if row.kind === "pair"}
           <div class="row line" data-i={range.start + i} style:transform="translateY({top}px)">
@@ -684,12 +690,20 @@
     color: var(--accent-fg);
   }
   .hunk-header {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     padding: 0 10px;
     white-space: pre;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .expander-note {
+    flex: none;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
   }
 
   .wrap .line {

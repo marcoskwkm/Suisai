@@ -4,7 +4,7 @@
   import { diagrams } from "../guide/diagrams";
   import { renderMarkdown } from "../guide/markdown";
   import { resolvedTheme } from "../theme.svelte";
-  import type { FileDiff, ViewMode } from "../types";
+  import type { FileDiff, Hunk, ViewMode } from "../types";
   import { LINE_H } from "./DiffView.svelte";
   import FileView from "./FileView.svelte";
 
@@ -29,7 +29,7 @@
   let fileViews: (FileView | undefined)[] = $state([]);
 
   const group = $derived(guide.groups[index]);
-  const sections = $derived(group ? groupSections(group, byKey, shownFiles) : []);
+  const sections = $derived(group ? groupSections(guide, index, byKey, shownFiles) : []);
   const stats = $derived(group ? groupStats(group, byKey) : null);
   const html = $derived(group ? renderMarkdown(group.explanation) : "");
   const prev = $derived(guide.groups[index - 1]);
@@ -101,6 +101,23 @@
 
       {#each sections as s, i (s.file.id + ":" + group.id)}
         {@const f = s.file}
+        <!-- On an expander that is about to reveal changes from other steps. -->
+        {#snippet otherSteps(hunks: Hunk[])}
+          {@const steps = [...new Set(hunks.map((h) => s.groupOf?.get(h) ?? null))].filter((g) => g !== null)}
+          <span class="other-steps">
+            {#if steps.length === 0}
+              Expanding shows changes not in the guide
+            {:else}
+              Expanding shows changes from
+              {#each steps as g (g)}
+                <button class="step-link" title="Go to step {g + 1}: {guide.groups[g].title}" onclick={() => onselect(g)}>
+                  <span class="num">{g + 1}</span>
+                  {#if steps.length === 1}<span class="title">{guide.groups[g].title}</span>{/if}
+                </button>
+              {/each}
+            {/if}
+          </span>
+        {/snippet}
         <section class="card">
           <div class="card-head">
             <span class="badge {f.status}">{STATUS_LABEL[f.status]}</span>
@@ -122,7 +139,8 @@
               {view}
               {wrap}
               outer={outer ?? null}
-              expandable={false}
+              allHunks={s.allHunks}
+              expanderNote={otherSteps}
               onopenline={f.newPath ? (no) => onopen(f, no) : undefined}
             />
           </div>
@@ -320,6 +338,47 @@
     padding: 0 12px;
     border-bottom: 1px solid var(--border-muted);
     background: var(--bg-subtle);
+  }
+  .other-steps {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--fg-muted);
+    white-space: nowrap;
+  }
+  .step-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .step-link:hover .title {
+    text-decoration: underline;
+  }
+  .step-link .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-size: 10.5px;
+    font-weight: 600;
+  }
+  .step-link .title {
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .card-body.whole :global(.image-diff) {
     height: 360px;

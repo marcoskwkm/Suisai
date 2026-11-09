@@ -26,7 +26,7 @@ const [file] = parsePatch(patch);
 const summarize = (rows: Row[]) =>
   rows.map((r) =>
     r.kind === "expander"
-      ? `E${r.gap}:${r.remaining}${r.up ? "↑" : ""}${r.down ? "↓" : ""}`
+      ? `E${r.gap}:${r.remaining}${r.up ? "↑" : ""}${r.down ? "↓" : ""}${r.reveals.length ? "*" + r.reveals.length : ""}`
       : r.kind === "line"
         ? `${r.type[0]}${r.oldNo ?? "-"}/${r.newNo ?? "-"}`
         : `${r.left ? r.left.type[0] + r.left.no : "_"}|${r.right ? r.right.type[0] + r.right.no : "_"}`,
@@ -96,6 +96,52 @@ describe("buildRows", () => {
   it("finds change starts", () => {
     const rows = buildRows(file, "unified", gaps, {}, true);
     expect(changeStarts(rows)).toEqual([2, 7]);
+  });
+});
+
+describe("gaps around hunks left out", () => {
+  const [three] = parsePatch(
+    patch.replace("@@ -40,2 +41,2 @@", "@@ -20,1 +21,1 @@\n-m\n+M\n@@ -40,2 +41,2 @@"),
+  );
+  const [h0, h1, h2] = three.hunks;
+
+  it("stops at a hunk in between, then reveals it whole", () => {
+    const file = { ...three, hunks: [h0, h2] };
+    const gaps = computeGaps(file.hunks, 50, 51, three.hunks);
+    expect(gaps[1]).toEqual({ index: 1, oldStart: 6, newStart: 7, size: 35, hunks: [h1] });
+    expect(summarize(buildRows(file, "unified", gaps, {}, true))).toContain("E1:35↑↓");
+
+    let exp = expand({}, gaps[1], "down");
+    let rows = summarize(buildRows(file, "unified", gaps, exp, true));
+    const i = rows.indexOf("c19/20");
+    expect(rows.slice(i, i + 2)).toEqual(["c19/20", "E1:21↑↓*1"]);
+    expect(buildRows(file, "unified", gaps, exp, true).find((r) => r.kind === "expander" && r.gap === 1)).toMatchObject({
+      reveals: [h1],
+    });
+
+    exp = expand(exp, gaps[1], "down");
+    rows = summarize(buildRows(file, "unified", gaps, exp, true));
+    expect(rows.slice(i, i + 4)).toEqual(["c19/20", "d20/-", "a-/21", "E1:19↑↓"]);
+
+    rows = summarize(buildRows(file, "unified", gaps, expand(exp, gaps[1], "up"), true));
+    expect(rows.slice(i + 3, i + 5)).toEqual(["c21/22", "c22/23"]);
+    expect(rows[rows.indexOf("d40/-") - 1]).toBe("c39/40");
+  });
+
+  it("reveals hunks before the first and after the last hunk shown", () => {
+    const file = { ...three, hunks: [h1] };
+    const gaps = computeGaps(file.hunks, 50, 51, three.hunks);
+    expect(gaps.map((g) => [g.size, g.hunks])).toEqual([
+      [21, [h0]],
+      [31, [h2]],
+    ]);
+    expect(summarize(buildRows(file, "unified", gaps, {}, true))).toEqual(["E0:21↑", "d20/-", "a-/21", "E1:31↓"]);
+
+    // 14 lines up to h0, then the rest is small enough to expand at once, h0 included.
+    const rows = summarize(buildRows(file, "unified", gaps, expand({}, gaps[0], "up"), true));
+    expect(rows.slice(0, 2)).toEqual(["E0:7↑*1", "c6/7"]);
+    const all = summarize(buildRows(file, "unified", gaps, expand({}, gaps[0], "all"), true));
+    expect(all.slice(0, 7)).toEqual(["c1/1", "c2/2", "c3/3", "d4/-", "a-/4", "a-/5", "c5/6"]);
   });
 });
 

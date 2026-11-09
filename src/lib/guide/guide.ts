@@ -353,6 +353,10 @@ export interface Section {
   file: FileDiff;
   /** The whole file is the change (binary, rename, mode change, empty file). */
   whole: boolean;
+  /** All of the file's hunks, when `file` has only the group's. */
+  allHunks?: Hunk[];
+  /** The group (by index) each of `allHunks` belongs to; null when in none. */
+  groupOf?: Map<Hunk, number | null>;
 }
 
 /** Lines a hunk covers on one side, as [start, end). */
@@ -386,11 +390,16 @@ export function matchHunks(full: Hunk[], shown: Hunk[]): number[] {
 }
 
 /**
- * The files of a group, in the order the agent listed its changes, each with
- * only the group's hunks. `shownFiles` are the files on screen (they differ
- * from the items' files when whitespace changes are hidden).
+ * The files of group `index`, in the order the agent listed its changes, each
+ * with only the group's hunks. `shownFiles` are the files on screen (they
+ * differ from the items' files when whitespace changes are hidden).
  */
-export function groupSections(group: GuideGroup, byKey: Map<string, ChangeItem>, shownFiles: Map<string, FileDiff>): Section[] {
+export function groupSections(guide: Guide, index: number, byKey: Map<string, ChangeItem>, shownFiles: Map<string, FileDiff>): Section[] {
+  const group = guide.groups[index];
+  const groupOfKey = new Map<string, number>();
+  guide.groups.forEach((g, i) => g.keys.forEach((k) => groupOfKey.set(k, i)));
+  const keyOf = new Map<string, string>();
+  for (const it of byKey.values()) if (it.hunk !== null) keyOf.set(`${it.file.id}:${it.hunk}`, it.key);
   const perFile = new Map<string, { full: FileDiff; hunks: Set<number>; whole: boolean }>();
   for (const key of group.keys) {
     const it = byKey.get(key);
@@ -407,15 +416,12 @@ export function groupSections(group: GuideGroup, byKey: Map<string, ChangeItem>,
       continue;
     }
     const shown = shownFiles.get(full.id) ?? full;
-    let picked: Hunk[];
-    if (shown.hunks === full.hunks) {
-      picked = full.hunks.filter((_, i) => hunks.has(i));
-    } else {
-      const owners = matchHunks(full.hunks, shown.hunks);
-      picked = shown.hunks.filter((_, i) => hunks.has(owners[i]));
-    }
+    const owners = shown.hunks === full.hunks ? full.hunks.map((_, i) => i) : matchHunks(full.hunks, shown.hunks);
+    const picked = shown.hunks.filter((_, i) => hunks.has(owners[i]));
     if (picked.length === 0) continue;
-    sections.push({ file: { ...shown, hunks: picked }, whole: false });
+    const groupOf = new Map<Hunk, number | null>();
+    shown.hunks.forEach((h, i) => groupOf.set(h, groupOfKey.get(keyOf.get(`${full.id}:${owners[i]}`) ?? "") ?? null));
+    sections.push({ file: { ...shown, hunks: picked }, whole: false, allHunks: shown.hunks, groupOf });
   }
   return sections;
 }

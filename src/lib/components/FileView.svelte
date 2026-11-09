@@ -1,7 +1,8 @@
 <script lang="ts">
   import { highlightSide, imageMime, isTooLargeToHighlight, loadSide, type SideContent } from "../content";
   import { buildRows, computeGaps, computeIntraline, expand, type Expansions } from "../diff/rows";
-  import type { FileDiff, Side, Token, ViewMode } from "../types";
+  import type { Snippet } from "svelte";
+  import type { FileDiff, Hunk, Side, Token, ViewMode } from "../types";
   import DiffView from "./DiffView.svelte";
   import ImageDiff from "./ImageDiff.svelte";
 
@@ -12,13 +13,15 @@
     onopenline?: (no: number) => void;
     /** Inline mode (see DiffView): the element that scrolls this file's diff. */
     outer?: HTMLElement | null;
-    /** Whether unchanged lines between hunks can be expanded. */
-    expandable?: boolean;
+    /** All of the file's hunks, when `file` has only some: the others are revealed by expanding. */
+    allHunks?: Hunk[];
+    /** Shown on an expander whose next click reveals some of the other hunks. */
+    expanderNote?: Snippet<[Hunk[]]>;
     /** Wrap long lines. */
     wrap?: boolean;
   }
 
-  let { file, view, onopenline, outer = null, expandable = true, wrap = false }: Props = $props();
+  let { file, view, onopenline, outer = null, allHunks, expanderNote, wrap = false }: Props = $props();
 
   let diffView: DiffView | undefined = $state();
   /**
@@ -127,14 +130,18 @@
 
   // Expanding needs the full contents of each side that exists.
   const canExpand = $derived(
-    expandable &&
-      content !== null && (df.oldPath === null || oldLines !== null) && (df.newPath === null || newLines !== null),
+    content !== null && (df.oldPath === null || oldLines !== null) && (df.newPath === null || newLines !== null),
   );
   const gaps = $derived(
-    computeGaps(df.hunks, df.oldPath === null ? 0 : (oldLines?.length ?? null), df.newPath === null ? 0 : (newLines?.length ?? null)),
+    computeGaps(
+      df.hunks,
+      df.oldPath === null ? 0 : (oldLines?.length ?? null),
+      df.newPath === null ? 0 : (newLines?.length ?? null),
+      allHunks,
+    ),
   );
   const rows = $derived(buildRows(df, view, gaps, expansions, canExpand));
-  const intraline = $derived(computeIntraline(df, text));
+  const intraline = $derived(computeIntraline(allHunks ? { ...df, hunks: allHunks } : df, text));
 
   function longest(lines: string[] | null, side: Side): number {
     let max = 0;
@@ -215,6 +222,7 @@
         {onopenline}
         {outer}
         {wrap}
+        {expanderNote}
       />
     {/if}
   </div>
