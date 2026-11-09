@@ -242,6 +242,10 @@ describe("sections", () => {
     // a.ts's second hunk is in "Second", shown by expanding.
     const [h0, h1] = first[0].allHunks!;
     expect([first[0].groupOf!.get(h0), first[0].groupOf!.get(h1)]).toEqual([0, 1]);
+    // Keys tell sections apart, and stay the same while their changes do.
+    const second = groupSections(g, 1, byKey, shown);
+    expect(new Set([...first, ...second].map((s) => s.key)).size).toBe(3);
+    expect(groupSections(g, 0, byKey, shown).map((s) => s.key)).toEqual(first.map((s) => s.key));
   });
 
   it("lists a group's files with their line counts", () => {

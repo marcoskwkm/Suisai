@@ -51,6 +51,11 @@ class GuideStore {
   instructions = $state<string | null>(null);
 
   guide = $state.raw<Guide | null>(null);
+  /**
+   * Sections of the guide marked as viewed (by Section.key), until the guide
+   * is written again. Kept for this session only.
+   */
+  viewed = $state.raw<ReadonlySet<string>>(new Set());
   items = $state.raw<ChangeItem[]>([]);
   byKey = $derived(new Map(this.items.map((it) => [it.key, it])));
 
@@ -240,7 +245,16 @@ class GuideStore {
     }
   }
 
+  setViewed(key: string, viewed: boolean) {
+    const next = new Set(this.viewed);
+    if (viewed) next.add(key);
+    else next.delete(key);
+    this.viewed = next;
+  }
+
   #set(guide: Guide | null) {
+    // A new guide (not an update of this one) starts with nothing viewed.
+    if (guide?.createdAt !== this.guide?.createdAt) this.viewed = new Set();
     this.guide = guide;
     guideSave(guide && JSON.stringify(guide)).catch((e) => console.error("could not save the guide", e));
   }

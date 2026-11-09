@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { groupSections, groupStats, type Guide } from "../guide/guide";
   import type { ChangeItem } from "../guide/items";
   import { diagrams } from "../guide/diagrams";
@@ -21,9 +22,12 @@
     onopen: (file: FileDiff, line?: number) => void;
     /** Shows a file in the Files tab. */
     onshowfile: (file: FileDiff) => void;
+    /** Sections marked as viewed (by key): they are collapsed. */
+    viewed: ReadonlySet<string>;
+    onviewed: (key: string, viewed: boolean) => void;
   }
 
-  let { guide, index, byKey, shownFiles, view, wrap, onselect, onopen, onshowfile }: Props = $props();
+  let { guide, index, byKey, shownFiles, view, wrap, onselect, onopen, onshowfile, viewed, onviewed }: Props = $props();
 
   let outer: HTMLDivElement | undefined = $state();
   let fileViews: (FileView | undefined)[] = $state([]);
@@ -42,6 +46,20 @@
   });
 
   const STATUS_LABEL = { added: "Added", deleted: "Deleted", modified: "Modified", renamed: "Renamed", copied: "Copied" };
+
+  /**
+   * Marks a section as viewed or not. A section collapsed from below its
+   * header (e.g. from the bottom of a long diff) is scrolled back into view,
+   * so the next file follows.
+   */
+  async function setViewed(key: string, value: boolean, from: Element) {
+    const card = from.closest(".card");
+    onviewed(key, value);
+    if (!value || !card || !outer) return;
+    await tick();
+    const top = card.getBoundingClientRect().top - outer.getBoundingClientRect().top;
+    if (top < 0) outer.scrollTop += top - 16;
+  }
 
   function firstLine(f: FileDiff): number {
     for (const h of f.hunks) for (const l of h.lines) if (l.type === "add") return l.newNo!;
@@ -118,8 +136,19 @@
             {/if}
           </span>
         {/snippet}
-        <section class="card">
+        {@const done = viewed.has(s.key)}
+        <section class="card" class:viewed={done}>
           <div class="card-head">
+            <button
+              class="chevron"
+              title={done ? "Expand" : "Collapse and mark as viewed"}
+              aria-expanded={!done}
+              onclick={(e) => setViewed(s.key, !done, e.currentTarget)}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 6l4 4 4-4" />
+              </svg>
+            </button>
             <span class="badge {f.status}">{STATUS_LABEL[f.status]}</span>
             <a
               class="path"
@@ -131,19 +160,37 @@
             </a>
             <span class="spacer"></span>
             <button class="link" title="Show the whole file in the Files tab" onclick={() => onshowfile(f)}>Show file</button>
+            <label class="viewed-toggle" title="Mark as viewed and collapse">
+              <input type="checkbox" checked={done} onchange={(e) => setViewed(s.key, e.currentTarget.checked, e.currentTarget)} />
+              Viewed
+            </label>
           </div>
-          <div class="card-body" class:whole={s.whole}>
-            <FileView
-              bind:this={fileViews[i]}
-              file={f}
-              {view}
-              {wrap}
-              outer={outer ?? null}
-              allHunks={s.allHunks}
-              expanderNote={otherSteps}
-              onopenline={f.newPath ? (no) => onopen(f, no) : undefined}
-            />
-          </div>
+          {#if !done}
+            <div class="card-body" class:whole={s.whole}>
+              <FileView
+                bind:this={fileViews[i]}
+                file={f}
+                {view}
+                {wrap}
+                outer={outer ?? null}
+                allHunks={s.allHunks}
+                expanderNote={otherSteps}
+                onopenline={f.newPath ? (no) => onopen(f, no) : undefined}
+              />
+            </div>
+            {#if !s.whole}
+              <!-- So a long diff can be marked without scrolling back up. -->
+              <div class="card-foot">
+                <span class="foot-path">{f.path}</span>
+                <button class="mark-viewed" onclick={(e) => setViewed(s.key, true, e.currentTarget)}>
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 8.5l3.5 3.5L13 4.5" />
+                  </svg>
+                  Mark as viewed
+                </button>
+              </div>
+            {/if}
+          {/if}
         </section>
       {:else}
         <div class="empty">Only whitespace changed in this step. Turn off “Hide whitespace” to see it.</div>
@@ -335,9 +382,55 @@
     align-items: center;
     gap: 8px;
     height: 36px;
-    padding: 0 12px;
+    padding: 0 12px 0 6px;
     border-bottom: 1px solid var(--border-muted);
     background: var(--bg-subtle);
+  }
+  .card.viewed .card-head {
+    border-bottom: none;
+  }
+  .card.viewed .path {
+    color: var(--fg-muted);
+  }
+  .chevron {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .chevron:hover {
+    color: var(--fg);
+    background: var(--bg-inset);
+  }
+  .card.viewed .chevron svg {
+    transform: rotate(-90deg);
+  }
+  .viewed-toggle {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .viewed-toggle input {
+    margin: 0;
+  }
+  .card.viewed .viewed-toggle {
+    color: var(--fg);
+    border-color: var(--accent);
   }
   .other-steps {
     display: flex;
@@ -379,6 +472,42 @@
     max-width: 320px;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    height: 36px;
+    padding: 0 12px;
+    border-top: 1px solid var(--border-muted);
+    background: var(--bg-subtle);
+  }
+  .foot-path {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--fg-muted);
+  }
+  .mark-viewed {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: none;
+    font-size: 12px;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .mark-viewed:hover {
+    color: var(--fg);
+    border-color: var(--accent);
   }
   .card-body.whole :global(.image-diff) {
     height: 360px;

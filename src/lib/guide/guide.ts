@@ -350,6 +350,8 @@ Set title and overview to empty strings to keep the guide's, or rewrite them if 
 
 /** One file's part of a group: the file with only that group's hunks. */
 export interface Section {
+  /** Identifies the section's changes in this group: changes when they do. */
+  key: string;
   file: FileDiff;
   /** The whole file is the change (binary, rename, mode change, empty file). */
   whole: boolean;
@@ -400,19 +402,21 @@ export function groupSections(guide: Guide, index: number, byKey: Map<string, Ch
   guide.groups.forEach((g, i) => g.keys.forEach((k) => groupOfKey.set(k, i)));
   const keyOf = new Map<string, string>();
   for (const it of byKey.values()) if (it.hunk !== null) keyOf.set(`${it.file.id}:${it.hunk}`, it.key);
-  const perFile = new Map<string, { full: FileDiff; hunks: Set<number>; whole: boolean }>();
+  const perFile = new Map<string, { full: FileDiff; hunks: Set<number>; whole: boolean; keys: string[] }>();
   for (const key of group.keys) {
     const it = byKey.get(key);
     if (!it) continue;
     let entry = perFile.get(it.file.id);
-    if (!entry) perFile.set(it.file.id, (entry = { full: it.file, hunks: new Set(), whole: false }));
+    if (!entry) perFile.set(it.file.id, (entry = { full: it.file, hunks: new Set(), whole: false, keys: [] }));
+    entry.keys.push(key);
     if (it.hunk === null) entry.whole = true;
     else entry.hunks.add(it.hunk);
   }
   const sections: Section[] = [];
-  for (const { full, hunks, whole } of perFile.values()) {
+  for (const { full, hunks, whole, keys } of perFile.values()) {
+    const key = `${group.id}:${keys.join(",")}`;
     if (whole) {
-      sections.push({ file: full, whole: true });
+      sections.push({ key, file: full, whole: true });
       continue;
     }
     const shown = shownFiles.get(full.id) ?? full;
@@ -421,7 +425,7 @@ export function groupSections(guide: Guide, index: number, byKey: Map<string, Ch
     if (picked.length === 0) continue;
     const groupOf = new Map<Hunk, number | null>();
     shown.hunks.forEach((h, i) => groupOf.set(h, groupOfKey.get(keyOf.get(`${full.id}:${owners[i]}`) ?? "") ?? null));
-    sections.push({ file: { ...shown, hunks: picked }, whole: false, allHunks: shown.hunks, groupOf });
+    sections.push({ key, file: { ...shown, hunks: picked }, whole: false, allHunks: shown.hunks, groupOf });
   }
   return sections;
 }

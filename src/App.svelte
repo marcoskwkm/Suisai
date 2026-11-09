@@ -473,6 +473,8 @@
           {guide}
           index={step}
           byKey={gs.byKey}
+          viewed={gs.viewed}
+          onviewed={(key, v) => gs.setViewed(key, v)}
           {shownFiles}
           {view}
           {wrap}
