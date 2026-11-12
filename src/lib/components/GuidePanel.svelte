@@ -34,6 +34,12 @@
     const known = new Set(g.groups.flatMap((x) => x.keys));
     return gs.items.filter((it) => !known.has(it.key)).length;
   });
+  /** The whole diff's size, as in the Files tab's footer. */
+  const totals = $derived({
+    files: new Set(gs.items.map((it) => it.file.id)).size,
+    add: gs.items.reduce((n, it) => n + it.additions, 0),
+    del: gs.items.reduce((n, it) => n + it.deletions, 0),
+  });
 
   // Elapsed time while the agent works.
   let now = $state(Date.now());
@@ -236,6 +242,11 @@
           {/if}
         </div>
       {/if}
+      <div class="totals">
+        <span>{totals.files} {totals.files === 1 ? "file" : "files"}</span>
+        <span class="add">+{totals.add}</span>
+        <span class="del">−{totals.del}</span>
+      </div>
       <div class="muted grow" title="Generated {new Date(guide.createdAt).toLocaleString()}">
         By {AGENT_NAMES[guide.agent]} · updated {ago(guide.updatedAt)}
       </div>
@@ -569,6 +580,16 @@
     flex-direction: column;
     gap: 6px;
     font-size: 12px;
+  }
+  .totals {
+    display: flex;
+    gap: 8px;
+    color: var(--fg-muted);
+  }
+  .totals .add,
+  .totals .del {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
   }
   .status,
   .actions {
