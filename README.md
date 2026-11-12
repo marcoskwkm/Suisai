@@ -75,6 +75,8 @@ The agent runs on your computer, in the repository, with read-only tools. Guides
 
 Explanations can include diagrams and charts (flowcharts, sequence and state diagrams, pie and bar charts), which the agent writes in [Mermaid](https://mermaid.js.org) and Suisai draws in the app. The agent settings let you pick the model and edit the prompt's instructions for grouping and writing.
 
+To ask the agent about some code, select lines in a step's diff and click **Ask about lines**. The question opens in a panel next to the guide (toggle it with **Questions** above the step), where you can ask follow-ups; click a question's line range to scroll back to those lines. The agent gets the step's explanation and diff along with your selection, and can read the repository with the same read-only tools. Questions run alongside guide updates, and last until Suisai is closed.
+
 In the guide, <kbd>Tab</kbd> / <kbd>[</kbd> <kbd>]</kbd> move between steps, and <kbd>n</kbd> / <kbd>p</kbd> move between changes, continuing into the next step.
 
 ## Keyboard shortcuts

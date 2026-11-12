@@ -58,6 +58,9 @@ async fn open_in_editor(state: tauri::State<'_, AppState>, path: String, line: u
     }
 }
 
+/// The agent job that writes the review guide, when a call names none.
+const GUIDE_JOB: &str = "guide";
+
 #[tauri::command]
 async fn ai_agents() -> Vec<ai::AgentInfo> {
     tauri::async_runtime::spawn_blocking(ai::detect_agents).await.unwrap_or_default()
@@ -70,16 +73,18 @@ async fn ai_run(
     model: Option<String>,
     prompt: String,
     schema: serde_json::Value,
+    job: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let cwd = state.work_dir.clone();
-    tauri::async_runtime::spawn_blocking(move || ai::run(agent, model.as_deref(), &cwd, &prompt, &schema))
+    let job = job.unwrap_or_else(|| GUIDE_JOB.into());
+    tauri::async_runtime::spawn_blocking(move || ai::run(agent, model.as_deref(), &cwd, &job, &prompt, &schema))
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn ai_cancel() {
-    ai::cancel();
+fn ai_cancel(job: Option<String>) {
+    ai::cancel(job.as_deref().unwrap_or(GUIDE_JOB));
 }
 
 fn cache_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -263,7 +268,7 @@ pub fn run() {
 
     app.run(|handle, event| {
         if let RunEvent::Exit = event {
-            ai::cancel();
+            ai::cancel_all();
             let dir = &handle.state::<AppState>().temp_dir;
             let _ = std::fs::remove_dir_all(dir);
         }

@@ -27,7 +27,7 @@ export function hash(s: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
-const SIGN = { add: "+", del: "-", context: " " } as const;
+export const SIGN = { add: "+", del: "-", context: " " } as const;
 
 /** The hunk's lines without line numbers, so moving it up or down keeps its key. */
 function hunkBody(h: Hunk): string {

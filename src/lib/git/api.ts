@@ -31,11 +31,16 @@ export interface AgentInfo {
 
 export const aiAgents = () => invoke<AgentInfo[]>("ai_agents");
 
-/** Runs the agent in the repository and returns the JSON it answered with. */
-export const aiRun = (agent: AgentInfo["kind"], model: string | null, prompt: string, schema: object) =>
-  invoke<unknown>("ai_run", { agent, model, prompt, schema });
+/**
+ * Runs the agent in the repository and returns the JSON it answered with.
+ * One agent runs per job (the guide's when null): a new run of a job cancels
+ * the previous one.
+ */
+export const aiRun = (agent: AgentInfo["kind"], model: string | null, prompt: string, schema: object, job: string | null = null) =>
+  invoke<unknown>("ai_run", { agent, model, prompt, schema, job });
 
-export const aiCancel = () => invoke<void>("ai_cancel");
+/** Stops the agent running for a job (the guide's when null). */
+export const aiCancel = (job: string | null = null) => invoke<void>("ai_cancel", { job });
 
 /** The cached guide for this diff, as JSON text. */
 export const guideLoad = () => invoke<string | null>("guide_load");

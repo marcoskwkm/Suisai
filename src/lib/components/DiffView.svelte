@@ -9,7 +9,7 @@
   import { changeStarts, type Cell, type LineKey, type Row } from "../diff/rows";
   import { segments, type Segment } from "../diff/segments";
   import { wrappedLines } from "../diff/wrap";
-  import type { Hunk, LineType, Side, Token, ViewMode } from "../types";
+  import type { DiffLine, Hunk, LineType, Side, Token, ViewMode } from "../types";
 
   interface Props {
     rows: Row[];
@@ -34,6 +34,14 @@
     wrap?: boolean;
     /** Shown on an expander whose next click reveals hunks that were not shown. */
     expanderNote?: Snippet<[Hunk[]]>;
+    /**
+     * Called when a selection made with the pointer ends: with the lines it
+     * covers (on the selected side, in split view) and where the pointer was,
+     * or with null when nothing is selected.
+     */
+    onselectlines?: (lines: DiffLine[] | null, at: { x: number; y: number }) => void;
+    /** Lines to highlight, as `old:12` or `new:41`. */
+    marked?: ReadonlySet<string>;
   }
 
   let {
@@ -50,6 +58,8 @@
     outer = null,
     wrap = false,
     expanderNote,
+    onselectlines,
+    marked,
   }: Props = $props();
 
   let scroller: HTMLDivElement;
@@ -272,7 +282,61 @@
     const target = (e.target as HTMLElement).closest<HTMLElement>("[data-side]");
     selectSide = view === "split" && target ? (target.dataset.side as Side) : null;
     startSelectionScroll(e);
+    if (onselectlines && e.button === 0) {
+      downRow = rowOf(e.target as Node);
+      window.addEventListener("pointerup", reportSelection, { once: true });
+    }
   }
+
+  // ---- selected lines ----
+
+  /** Row where the pointer went down: the selection's start, even once scrolled out and no longer drawn. */
+  let downRow: number | null = null;
+
+  function rowOf(node: Node | null): number | null {
+    const el = node instanceof Element ? node : node?.parentElement;
+    const row = el?.closest<HTMLElement>(".row[data-i]");
+    return row && sizer.contains(row) ? Number(row.dataset.i) : null;
+  }
+
+  function reportSelection(e: PointerEvent) {
+    const at = { x: e.clientX, y: e.clientY };
+    // After the browser has updated the selection (e.g. a click clears it).
+    requestAnimationFrame(() => onselectlines?.(selectedLines(), at));
+  }
+
+  function selectedLines(): DiffLine[] | null {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) return null;
+    const range = sel.getRangeAt(0);
+    const a = rowOf(sel.anchorNode) ?? downRow;
+    const b = rowOf(sel.focusNode);
+    if (a === null || b === null) return null;
+    let start = Math.min(a, b);
+    let end = Math.max(a, b);
+    // A selection that ends at the very start of a line (e.g. a triple click) does not include it.
+    if (end > start && range.endOffset === 0 && rowOf(range.endContainer) === end) end--;
+    const lines: DiffLine[] = [];
+    for (let i = start; i <= end; i++) {
+      const r = rows[i];
+      if (r.kind === "line") {
+        lines.push({ type: r.type, oldNo: r.oldNo, newNo: r.newNo, text: text(r.type === "del" ? "old" : "new", (r.newNo ?? r.oldNo)!) });
+      } else if (r.kind === "pair") {
+        const side = selectSide ?? "new";
+        const cell = side === "old" ? r.left : r.right;
+        if (!cell) continue;
+        lines.push({
+          type: cell.type,
+          oldNo: cell.type === "add" ? null : (r.left?.no ?? null),
+          newNo: cell.type === "del" ? null : (r.right?.no ?? null),
+          text: text(side, cell.no),
+        });
+      }
+    }
+    return lines.length ? lines : null;
+  }
+
+  const isMarked = (side: Side, no: number) => marked?.has(`${side}:${no}`) ?? false;
 
   // ---- auto-scroll while selecting ----
   // Each pane scrolls horizontally by moving its text (not a native scroll
@@ -365,6 +429,17 @@
     return starts.map((i) => offsets[i]);
   }
   export const element = () => scroller;
+  /** Where a line is, in pixels from the top of the diff; null when it is not shown. */
+  export function lineOffset(line: { oldNo: number | null; newNo: number | null }): number | null {
+    const i = rows.findIndex((r) =>
+      r.kind === "line"
+        ? line.newNo !== null ? r.newNo === line.newNo : r.oldNo === line.oldNo
+        : r.kind === "pair"
+          ? line.newNo !== null ? r.right?.no === line.newNo : r.left?.no === line.oldNo
+          : false,
+    );
+    return i < 0 ? null : offsets[i];
+  }
 
   /** Scrolls to the next/previous block of changes. Returns false when there is none. */
   export function jumpChange(dir: 1 | -1): boolean {
@@ -382,7 +457,7 @@
 
 {#snippet code(side: Side, cell: Cell | null)}
   {#if cell}
-    <div class="code {cell.type}" data-side={side}>
+    <div class="code {cell.type}" class:marked={isMarked(side, cell.no)} data-side={side}>
       <span class="sign">{sign(cell.type)}</span>
       <div class="clip">
         <div class="text" style:transform={wrap ? undefined : `translateX(${-(view === "unified" ? scrollLeft.new : scrollLeft[side])}px)`}>
@@ -404,11 +479,11 @@
 {#snippet num(cell: Cell | null, cls = "", side: Side = "old")}
   {#if cell && side === "new" && onopenline}
     {@const no = cell.no}
-    <a class="num {cell.type} {cls}" href={"#"} title="Open line {no} in editor" onclick={(e) => (e.preventDefault(), onopenline(no))}
+    <a class="num {cell.type} {cls}" class:marked={isMarked(side, no)} href={"#"} title="Open line {no} in editor" onclick={(e) => (e.preventDefault(), onopenline(no))}
       >{no}</a
     >
   {:else}
-    <div class="num {cell?.type ?? 'empty'} {cls}">{cell?.no ?? ""}</div>
+    <div class="num {cell?.type ?? 'empty'} {cls}" class:marked={cell !== null && isMarked(side, cell.no)}>{cell?.no ?? ""}</div>
   {/if}
 {/snippet}
 
@@ -591,6 +666,14 @@
   }
   .split .num.right {
     border-left: 1px solid var(--border-muted);
+  }
+  /* Lines a question is about: tinted, with a bar at the start of the code. */
+  .num.marked,
+  .code.marked {
+    background-image: linear-gradient(color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
+  }
+  .code.marked {
+    box-shadow: inset 2px 0 var(--accent);
   }
 
   .code {

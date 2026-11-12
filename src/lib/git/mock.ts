@@ -36,7 +36,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown>): Pr
         { kind: "codex", path: null },
       ];
     case "ai_run":
-      return mockGuideAnswer(String(args.prompt));
+      return args.job ? mockQuestionAnswer(String(args.prompt)) : mockGuideAnswer(String(args.prompt));
     case "guide_load":
       return null;
     case "guide_save":
@@ -72,4 +72,16 @@ async function mockGuideAnswer(prompt: string) {
     "shows how the UI handles a group with one or several files. The explanations use `inline code`, **bold** text " +
     "and lists, like an agent's would, and this overview is long enough to be cut to a few lines in the sidebar.";
   return { title: "Mock review guide", overview, groups };
+}
+
+/** A stand-in answer to a question about selected lines. */
+async function mockQuestionAnswer(prompt: string) {
+  await new Promise((r) => setTimeout(r, 1500));
+  const question = /# Question\n\n([\s\S]*?)\n\n# How to answer/.exec(prompt)?.[1] ?? "";
+  const lines = /# The selected lines[\s\S]*?```diff\n([\s\S]*?)\n```/.exec(prompt)?.[1].split("\n").length ?? 0;
+  return {
+    answer:
+      `A mock answer about ${lines} selected ${lines === 1 ? "line" : "lines"}, made in the browser without an agent.\n\n` +
+      `You asked: *${question}*\n\n- A point with \`inline code\`\n- Another with **bold** text`,
+  };
 }

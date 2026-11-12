@@ -2,7 +2,7 @@
   import { highlightSide, imageMime, isTooLargeToHighlight, loadSide, type SideContent } from "../content";
   import { buildRows, computeGaps, computeIntraline, expand, type Expansions } from "../diff/rows";
   import type { Snippet } from "svelte";
-  import type { FileDiff, Hunk, Side, Token, ViewMode } from "../types";
+  import type { DiffLine, FileDiff, Hunk, Side, Token, ViewMode } from "../types";
   import DiffView from "./DiffView.svelte";
   import ImageDiff from "./ImageDiff.svelte";
 
@@ -19,9 +19,13 @@
     expanderNote?: Snippet<[Hunk[]]>;
     /** Wrap long lines. */
     wrap?: boolean;
+    /** See DiffView. */
+    onselectlines?: (lines: DiffLine[] | null, at: { x: number; y: number }) => void;
+    /** Lines to highlight (see DiffView). */
+    marked?: ReadonlySet<string>;
   }
 
-  let { file, view, onopenline, outer = null, allHunks, expanderNote, wrap = false }: Props = $props();
+  let { file, view, onopenline, outer = null, allHunks, expanderNote, wrap = false, onselectlines, marked }: Props = $props();
 
   let diffView: DiffView | undefined = $state();
   /**
@@ -196,6 +200,7 @@
   export const jumpChange = (d: 1 | -1) => diffView?.jumpChange(d) ?? false;
   export const changePositions = () => diffView?.changePositions() ?? [];
   export const element = () => diffView?.element();
+  export const lineOffset = (line: DiffLine) => diffView?.lineOffset(line) ?? null;
 </script>
 
 <div class="file-view" class:inline={outer !== null}>
@@ -223,6 +228,8 @@
         {outer}
         {wrap}
         {expanderNote}
+        {onselectlines}
+        {marked}
       />
     {/if}
   </div>

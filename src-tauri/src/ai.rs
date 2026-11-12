@@ -91,21 +91,33 @@ fn is_executable(p: &Path) -> bool {
 
 // ---- running ----
 
-/// The agent process that is running, so it can be cancelled.
-static RUNNING: Mutex<Option<(u64, Child)>> = Mutex::new(None);
+/// The agent processes that are running, by job (e.g. the guide, or one
+/// question), so they can be cancelled.
+static RUNNING: Mutex<Vec<(String, u64, Child)>> = Mutex::new(Vec::new());
 static NEXT_RUN: AtomicU64 = AtomicU64::new(1);
 
-/// Stops the running agent, if any.
-pub fn cancel() {
-    if let Some((_, mut child)) = RUNNING.lock().unwrap().take() {
+/// Stops the agent running for `job`, if any.
+pub fn cancel(job: &str) {
+    let mut running = RUNNING.lock().unwrap();
+    if let Some(i) = running.iter().position(|(j, ..)| j == job) {
+        let (_, _, mut child) = running.remove(i);
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// Stops every running agent.
+pub fn cancel_all() {
+    for (_, _, mut child) in RUNNING.lock().unwrap().drain(..) {
         let _ = child.kill();
         let _ = child.wait();
     }
 }
 
 /// Runs the agent with a prompt and returns the JSON value it produced.
-/// Only one agent runs at a time: starting one cancels the previous one.
-pub fn run(kind: AgentKind, model: Option<&str>, cwd: &Path, prompt: &str, schema: &serde_json::Value) -> Result<serde_json::Value, String> {
+/// One agent runs per job: starting one cancels the job's previous run, and
+/// leaves other jobs running.
+pub fn run(kind: AgentKind, model: Option<&str>, cwd: &Path, job: &str, prompt: &str, schema: &serde_json::Value) -> Result<serde_json::Value, String> {
     let exe = agent_path(kind)?;
     let scratch = std::env::temp_dir().join(format!("suisai-ai-{}-{}", std::process::id(), NEXT_RUN.fetch_add(1, Ordering::Relaxed)));
     std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
@@ -140,7 +152,7 @@ pub fn run(kind: AgentKind, model: Option<&str>, cwd: &Path, prompt: &str, schem
                 cmd.arg("-");
             }
         }
-        let (stdout, stderr) = run_process(cmd, prompt)?;
+        let (stdout, stderr) = run_process(cmd, job, prompt)?;
         match kind {
             AgentKind::Claude => parse_claude(&stdout, &stderr),
             AgentKind::Codex => {
@@ -154,8 +166,8 @@ pub fn run(kind: AgentKind, model: Option<&str>, cwd: &Path, prompt: &str, schem
 }
 
 /// Starts a process, writes `input` to its stdin and waits for it to exit.
-fn run_process(mut cmd: Command, input: &str) -> Result<(String, String), String> {
-    cancel();
+fn run_process(mut cmd: Command, job: &str, input: &str) -> Result<(String, String), String> {
+    cancel(job);
     let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -181,26 +193,23 @@ fn run_process(mut cmd: Command, input: &str) -> Result<(String, String), String
     });
 
     let id = NEXT_RUN.fetch_add(1, Ordering::Relaxed);
-    *RUNNING.lock().unwrap() = Some((id, child));
+    RUNNING.lock().unwrap().push((job.to_string(), id, child));
     let started = Instant::now();
     let status = loop {
         {
             let mut running = RUNNING.lock().unwrap();
-            match running.as_mut() {
-                Some((rid, child)) if *rid == id => {
-                    if let Ok(Some(status)) = child.try_wait() {
-                        running.take();
-                        break Some(status);
-                    }
-                    if started.elapsed() > TIMEOUT {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        running.take();
-                        return Err("the agent took too long and was stopped".into());
-                    }
-                }
-                // Cancelled, or replaced by a newer run.
-                _ => break None,
+            // Gone when cancelled, or replaced by a newer run of the job.
+            let Some(i) = running.iter().position(|(_, rid, _)| *rid == id) else { break None };
+            let child = &mut running[i].2;
+            if let Ok(Some(status)) = child.try_wait() {
+                running.remove(i);
+                break Some(status);
+            }
+            if started.elapsed() > TIMEOUT {
+                let _ = child.kill();
+                let _ = child.wait();
+                running.remove(i);
+                return Err("the agent took too long and was stopped".into());
             }
         }
         std::thread::sleep(Duration::from_millis(100));
