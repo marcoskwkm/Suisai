@@ -1,5 +1,7 @@
+import mermaid from "mermaid";
 import { describe, expect, it } from "vitest";
 import { parsePatch } from "../git/parse";
+import { normalizeDiagram } from "./diagrams";
 import { DEFAULT_INSTRUCTIONS, fullJob, groupFiles, groupSections, groupStats, matchHunks, syncGuide, type Guide } from "./guide";
 import { changeItems } from "./items";
 import { renderMarkdown } from "./markdown";
@@ -278,6 +280,35 @@ describe("markdown", () => {
     );
     // Other languages stay code blocks.
     expect(renderMarkdown("```ts\nlet a = 1;\n```")).toBe("<pre><code>let a = 1;</code></pre>");
+  });
+
+  it("makes sequence diagram text drawable", async () => {
+    const source = [
+      "sequenceDiagram",
+      '  participant UI as "ContextUi (captured)"',
+      '  D->>D: "open = false; tick()"',
+      "  Note over D,UI: #set(); done #9829;",
+      "  alt hit; miss",
+      "    D-->>UI: ok",
+      "  else",
+      "  end",
+    ].join("\n");
+    const drawable = [
+      "sequenceDiagram",
+      "  participant UI as ContextUi (captured)",
+      "  D->>D: open = false#59; tick()",
+      "  Note over D,UI: #35;set()#59; done #9829;",
+      "  alt hit#59; miss",
+      "    D-->>UI: ok",
+      "  else",
+      "  end",
+    ].join("\n");
+    expect(normalizeDiagram(source)).toBe(drawable);
+    await expect(mermaid.parse(source)).rejects.toThrow();
+    await expect(mermaid.parse(drawable)).resolves.toBeTruthy();
+    // Other diagram types keep their quotes and semicolons.
+    const flow = 'flowchart TD\n  A["discard(); x = 1"] --> B';
+    expect(normalizeDiagram(flow)).toBe(flow);
   });
 
   it("renders lists, code and emphasis", () => {

@@ -90,6 +90,42 @@ function themeVariables(theme: Theme) {
   };
 }
 
+/** A sequence diagram's message or note: the text after the first colon. */
+const SEQUENCE_MESSAGE = /^(\s*(?:note\s[^:]*|[^:]*(?:--?(?:>>?|x|\))|<<--?>>)[^:]*):)(.*)$/i;
+/** A block's label, e.g. `alt cache hit`. */
+const SEQUENCE_BLOCK = /^(\s*(?:loop|alt|else|opt|par|par_over|and|critical|option|break)\b)(.*)$/i;
+const SEQUENCE_ALIAS = /^(\s*(?:create\s+)?(?:participant|actor)\s+\S+\s+as\s)(.*)$/i;
+
+/**
+ * Makes the agent's sequence diagrams drawable. Their text is not quoted
+ * (Mermaid shows quotes as they are), and `;` ends a statement and `#` starts
+ * a comment even mid-message, e.g. `A->>A: "open = false; tick()"`. Drops
+ * surrounding quotes and writes those characters as entity codes, which
+ * Mermaid draws as the characters. Other diagram types are left alone.
+ */
+export function normalizeDiagram(source: string): string {
+  const lines = source.split("\n");
+  const header = lines.findIndex((l) => l.trim() && !l.trim().startsWith("%%"));
+  if (header < 0 || !/^\s*sequenceDiagram\b/.test(lines[header])) return source;
+  // `special` also matches existing entity codes, which stay as written.
+  const text = (s: string, special: RegExp) => {
+    const t = s.trim();
+    const unquoted = /^"[^"]*"$/.test(t) ? t.slice(1, -1) : t;
+    return unquoted.replace(special, (c) => (c.length > 1 ? c : `#${c.charCodeAt(0)};`));
+  };
+  return lines
+    .map((line, i) => {
+      if (i <= header || line.trim().startsWith("%%")) return line;
+      // Aliases also end at `,` and `:`.
+      let m = SEQUENCE_ALIAS.exec(line);
+      if (m) return m[1] + text(m[2], /#\w+;|[#;,:]/g);
+      m = SEQUENCE_MESSAGE.exec(line) ?? SEQUENCE_BLOCK.exec(line);
+      if (m) return m[1] + (m[2].trim() ? " " + text(m[2], /#\w+;|[#;]/g) : "");
+      return line;
+    })
+    .join("\n");
+}
+
 function draw(source: string, theme: Theme): Promise<string> {
   const key = theme + "\u0000" + source;
   let svg = cache.get(key);
@@ -127,7 +163,7 @@ function draw(source: string, theme: Theme): Promise<string> {
         });
         configured = theme;
       }
-      const { svg } = await m.render(`suisai-diagram-${nextId++}`, source);
+      const { svg } = await m.render(`suisai-diagram-${nextId++}`, normalizeDiagram(source));
       return svg;
     });
     queue = svg.catch(() => {});
