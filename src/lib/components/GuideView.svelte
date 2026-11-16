@@ -447,6 +447,10 @@
   .prose :global(li) {
     margin: 2px 0;
   }
+  .prose :global(li > ul),
+  .prose :global(li > ol) {
+    margin-bottom: 0;
+  }
   .prose :global(code) {
     font-family: var(--font-mono);
     font-size: 12px;

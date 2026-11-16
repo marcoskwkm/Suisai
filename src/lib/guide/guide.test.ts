@@ -285,4 +285,31 @@ describe("markdown", () => {
       "<p>Uses <code>a&lt;b&gt;</code> and <strong>bold</strong>.</p><ul><li>one</li><li><em>two</em></li></ul>",
     );
   });
+
+  it("lets emphasis wrap code spans", () => {
+    expect(renderMarkdown("**`run`** and __a `b` c__, not foo_bar_baz or \\*this\\*. ~~Old~~.")).toBe(
+      "<p><strong><code>run</code></strong> and <strong>a <code>b</code> c</strong>, not foo_bar_baz or *this*. <del>Old</del>.</p>",
+    );
+  });
+
+  it("nests lists by indentation", () => {
+    expect(renderMarkdown("1. **One**\n   - a\n   - b\n2. Two\n\n3. Three\n- Other")).toBe(
+      "<ol><li><strong>One</strong><ul><li>a</li><li>b</li></ul></li><li>Two</li><li>Three</li></ol><ul><li>Other</li></ul>",
+    );
+    expect(renderMarkdown("3. Three\n4. Four")).toBe('<ol start="3"><li>Three</li><li>Four</li></ol>');
+  });
+
+  it("renders tables", () => {
+    expect(renderMarkdown("| Name | Count |\n|:--|--:|\n| **a** | `x \\| y` |\n| b |")).toBe(
+      '<div class="md-table"><table><thead><tr><th style="text-align: left">Name</th><th style="text-align: right">Count</th></tr></thead>' +
+        '<tbody><tr><td style="text-align: left"><strong>a</strong></td><td style="text-align: right"><code>x | y</code></td></tr>' +
+        '<tr><td style="text-align: left">b</td><td style="text-align: right"></td></tr></tbody></table></div>',
+    );
+  });
+
+  it("renders quotes, rules and headings", () => {
+    expect(renderMarkdown("> Note <b>\n> more\n\n---\n\n## Title ##")).toBe(
+      "<blockquote><p>Note &lt;b&gt; more</p></blockquote><hr><p><strong>Title</strong></p>",
+    );
+  });
 });
