@@ -5,6 +5,8 @@
 
   interface Props {
     session: SessionInfo | null;
+    /** The current branch, when the diff involves it. */
+    branch: string | null;
     files: FileDiff[];
     selectedId: string | null;
     filter: string;
@@ -15,7 +17,7 @@
     guide: Snippet;
   }
 
-  let { session, files, selectedId, filter = $bindable(), onselect, mode, onmode, guide }: Props = $props();
+  let { session, branch, files, selectedId, filter = $bindable(), onselect, mode, onmode, guide }: Props = $props();
 
   let collapsed = $state(new Set<string>());
   let list: HTMLDivElement | undefined = $state();
@@ -49,7 +51,17 @@
 
 <aside class="sidebar">
   <header>
-    <div class="title" title={session?.title}>{session?.title ?? ""}</div>
+    <div class="title-row">
+      <div class="title" title={session?.title}>{session?.title ?? ""}</div>
+      {#if branch}
+        <div class="branch" title="Current branch: {branch}">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
+          </svg>
+          <span>{branch}</span>
+        </div>
+      {/if}
+    </div>
     {#if session?.subtitle}<div class="subtitle" title={session.subtitle}>{session.subtitle}</div>{/if}
   </header>
 
@@ -139,10 +151,39 @@
   header {
     padding: 12px 12px 8px;
   }
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
   .title {
+    /* A long branch name is cut before the repository's. */
+    flex-shrink: 0;
+    max-width: 70%;
     font-weight: 600;
     font-size: 14px;
     letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .branch {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: var(--bg-inset);
+    color: var(--fg-muted);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .branch svg {
+    flex-shrink: 0;
+  }
+  .branch span {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

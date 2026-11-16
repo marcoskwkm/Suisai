@@ -20,6 +20,13 @@ const base = [
 const patch = git([...base, ...args]).toString("utf8");
 const wsPatch = git([...base, "-w", ...args]).toString("utf8");
 const root = git(["rev-parse", "--show-toplevel"]).toString("utf8").trim();
+// Unlike the app, records the branch even when the diff does not involve HEAD.
+let branch: string | null = null;
+try {
+  branch = git(["symbolic-ref", "--short", "-q", "HEAD"]).toString("utf8").trim();
+} catch {
+  // detached HEAD
+}
 
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|ico|avif)$/i;
 const files: Record<string, unknown> = {};
@@ -62,5 +69,5 @@ const session = {
   error: null,
 };
 mkdirSync("dev", { recursive: true });
-writeFileSync("dev/mock.json", JSON.stringify({ session, patch, wsPatch, files }));
+writeFileSync("dev/mock.json", JSON.stringify({ session, patch, wsPatch, branch, files }));
 console.log(`Recorded ${parsePatch(patch).length} files to dev/mock.json`);

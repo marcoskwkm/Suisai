@@ -50,6 +50,7 @@
 
   // ---- data ----
   let session = $state.raw<SessionInfo | null>(null);
+  let branch = $state<string | null>(null);
   let files = $state.raw<FileDiff[]>([]);
   let selectedId = $state<string | null>(null);
   let error = $state<string | null>(null);
@@ -165,6 +166,7 @@
         return;
       }
       const out = await getDiff(ignoreWhitespace);
+      branch = out.branch;
       const prepare = (patch: string) => {
         const parsed = parsePatch(patch);
         return session!.mode === "paths" ? relativizePaths(parsed, session!.leftRoot!, session!.rightRoot!, session!.fileName) : parsed;
@@ -334,6 +336,7 @@
       <Sidebar
         bind:this={sidebar}
         {session}
+        {branch}
         files={visibleFiles}
         {selectedId}
         bind:filter

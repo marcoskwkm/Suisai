@@ -72,4 +72,6 @@ export interface SessionInfo {
 export interface DiffOutput {
   patch: string;
   ignoreWhitespacePatch: string | null;
+  /** Repo mode: the current branch, when the diff involves it. */
+  branch: string | null;
 }

@@ -69,6 +69,8 @@ pub struct DiffOutput {
     pub patch: String,
     /// Patch generated with `-w`, when whitespace changes are hidden.
     pub ignore_whitespace_patch: Option<String>,
+    /// Repo mode: the current branch, when the diff involves it.
+    pub branch: Option<String>,
 }
 
 pub fn git_root(cwd: &Path) -> Result<PathBuf, String> {
@@ -142,7 +144,11 @@ impl Source {
         let patch = run(make(false), no_index)?;
         let ignore_whitespace_patch =
             if ignore_whitespace { Some(run(make(true), no_index)?) } else { None };
-        Ok(DiffOutput { patch, ignore_whitespace_patch })
+        let branch = match self {
+            Source::Repo { cwd, args, .. } => current_branch(cwd, args),
+            Source::Paths { .. } => None,
+        };
+        Ok(DiffOutput { patch, ignore_whitespace_patch, branch })
     }
 
     pub fn read(&self, side: Side, path: &str, blob: Option<&str>, want_base64: bool) -> FileContent {
@@ -166,6 +172,41 @@ impl Source {
             _ => FileContent::Missing,
         }
     }
+}
+
+/// The branch HEAD is on, if the diff with these `git diff` arguments
+/// involves HEAD: one side is the working tree or the index, or one of the
+/// commits it compares is HEAD. A detached HEAD shows the branch being
+/// rebased, or the commit.
+fn current_branch(cwd: &Path, args: &[String]) -> Option<String> {
+    let git = |a: &[&str]| -> Option<String> {
+        let out = Command::new("git").args(a).current_dir(cwd).output().ok()?;
+        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+    // Each revision argument names one commit, or several for ranges like
+    // `main...feature`. Two or more means the diff is between commits.
+    let commits: Vec<String> = args
+        .iter()
+        .take_while(|a| *a != "--")
+        .filter(|a| !a.starts_with('-'))
+        .filter_map(|a| git(&["rev-parse", "--revs-only", a]))
+        .flat_map(|out| out.lines().map(|l| l.trim_start_matches('^').to_string()).collect::<Vec<_>>())
+        .collect();
+    // None on an unborn branch, which has no commits yet.
+    let head = git(&["rev-parse", "--verify", "-q", "HEAD"]);
+    if commits.len() >= 2 && !commits.iter().any(|c| Some(c) == head.as_ref()) {
+        return None;
+    }
+    if let Some(name) = git(&["symbolic-ref", "--short", "-q", "HEAD"]) {
+        return Some(name);
+    }
+    for dir in ["rebase-merge", "rebase-apply"] {
+        let path = git(&["rev-parse", "--git-path", &format!("{dir}/head-name")])?;
+        if let Ok(name) = fs::read_to_string(cwd.join(path)) {
+            return Some(format!("{} (rebasing)", name.trim().trim_start_matches("refs/heads/")));
+        }
+    }
+    Some(format!("{} (detached)", git(&["rev-parse", "--short", "HEAD"])?))
 }
 
 impl Source {
@@ -372,6 +413,37 @@ mod tests {
             "vscode://file/a/my%20file%231.ts:12"
         );
         assert_eq!(editor_url("zed://file{path}", Path::new("/ü"), 1), "zed://file/%C3%BC");
+    }
+
+    #[test]
+    fn shows_the_branch_when_the_diff_involves_head() {
+        let base = std::env::temp_dir().join(format!("suisai-branch-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let git = |a: &[&str]| {
+            let ok = Command::new("git").args(["-c", "user.name=t", "-c", "user.email=t@t"]).args(a).current_dir(&base).status().unwrap();
+            assert!(ok.success());
+        };
+        git(&["init", "-q", "-b", "feature"]);
+        let branch = |a: &[&str]| current_branch(&base, &a.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(branch(&[]).as_deref(), Some("feature"));
+        for _ in 0..3 {
+            git(&["commit", "-q", "--allow-empty", "-m", "c"]);
+        }
+
+        for args in [&[][..], &["--staged"], &["HEAD~2"], &["-U5", "HEAD~2", "--", "src"], &["HEAD~2", "HEAD"], &["HEAD~2.."], &["HEAD...HEAD~2"]] {
+            assert_eq!(branch(args).as_deref(), Some("feature"), "{args:?}");
+        }
+        for args in [&["HEAD~2", "HEAD~1"][..], &["HEAD~2..HEAD~1"], &["--stat", "HEAD~2...HEAD~1", "--", "HEAD"]] {
+            assert_eq!(branch(args), None, "{args:?}");
+        }
+
+        git(&["checkout", "-q", "--detach", "HEAD~1"]);
+        assert!(branch(&[]).unwrap().ends_with(" (detached)"));
+        fs::create_dir_all(base.join(".git/rebase-merge")).unwrap();
+        fs::write(base.join(".git/rebase-merge/head-name"), "refs/heads/feature\n").unwrap();
+        assert_eq!(branch(&["HEAD~1", "HEAD"]).as_deref(), Some("feature (rebasing)"));
+        fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

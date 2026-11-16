@@ -6,6 +6,7 @@ interface Mock {
   session: SessionInfo;
   patch: string;
   wsPatch: string;
+  branch?: string | null;
   files: Record<string, FileContent>;
 }
 
@@ -23,7 +24,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown>): Pr
       // `?guide` in the URL acts like `ss --guide`.
       return { ...m.session, startGuide: new URLSearchParams(location.search).has("guide") };
     case "get_diff":
-      return { patch: m.patch, ignoreWhitespacePatch: args.ignoreWhitespace ? m.wsPatch : null } satisfies DiffOutput;
+      return { patch: m.patch, ignoreWhitespacePatch: args.ignoreWhitespace ? m.wsPatch : null, branch: m.branch ?? null } satisfies DiffOutput;
     case "read_file": {
       const key = [args.side as Side, args.path, args.blob ?? "", Boolean(args.base64)].join("\u0000");
       return m.files[key] ?? { kind: "missing" };
