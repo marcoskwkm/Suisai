@@ -26,6 +26,36 @@
 
   const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
+  // Dragging the left edge resizes the panel; the width is remembered between runs.
+  const WIDTH_KEY = "questionsWidth";
+  let width = $state(380);
+  try {
+    width = JSON.parse(localStorage.getItem(WIDTH_KEY) ?? "380");
+  } catch {
+    // keep the default
+  }
+  function startResize(e: PointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = width;
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      width = Math.max(280, Math.min(900, window.innerWidth * 0.6, startW + startX - ev.clientX));
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      try {
+        localStorage.setItem(WIDTH_KEY, JSON.stringify(width));
+      } catch {
+        // ignore
+      }
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+  }
+
   // Elapsed time while the agent works on any thread.
   let now = $state(Date.now());
   const busy = $derived(threads.some((t) => t.startedAt !== null));
@@ -71,7 +101,8 @@
   }
 </script>
 
-<aside class="questions">
+<aside class="questions" style:width="{width}px">
+  <div class="resizer" role="separator" aria-orientation="vertical" onpointerdown={startResize}></div>
   <header class="head">
     <span class="title">Questions</span>
     <span class="muted">Step {step + 1}</span>
@@ -160,13 +191,31 @@
 
 <style>
   .questions {
+    position: relative;
     display: flex;
     flex-direction: column;
-    width: 380px;
     flex: none;
+    /* Leaves room for the diff when the window is narrow. */
+    max-width: 60vw;
     min-height: 0;
     border-left: 1px solid var(--border);
     background: var(--bg);
+  }
+  /* Over the left border, like the sidebar's resizer. */
+  .resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -3px;
+    width: 5px;
+    z-index: 2;
+    cursor: col-resize;
+  }
+  .resizer:hover::after {
+    content: "";
+    position: absolute;
+    inset: 0 1px;
+    background: var(--accent);
   }
   .head {
     flex: none;
